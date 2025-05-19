@@ -1,19 +1,21 @@
 package models
 
 import (
-	"gorm.io/gorm"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 type Product struct {
-	ID           uint    `gorm:"primaryKey;autoIncrement"`
-	Name         string  `gorm:"not null"`
-	Description  string  `gorm:""`
-	SalePrice    float64 `gorm:"not null"`
-	RegularPrice float64 `gorm:"not null"`
-	BaseCost     float64 `gorm:"not null"`
-	Image        string  `gorm:"not null"`
-	Weight       float64 `gorm:"not null"`
+	ID           uint           `gorm:"primaryKey;autoIncrement"`
+	Name         string         `gorm:"not null"`
+	Description  string
+	SalePrice    float64        `gorm:"not null"`
+	RegularPrice float64
+	BaseCost     float64
+	Image        string         `gorm:"not null"`
+	Weight       float64        `gorm:"not null"`
+	Categories   []Category     `gorm:"many2many:product_categories;"` // 💡 Many-to-many relationship
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 	DeletedAt    gorm.DeletedAt `gorm:"index"`

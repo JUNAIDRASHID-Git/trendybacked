@@ -30,17 +30,17 @@ func GetUser(db *gorm.DB) gin.HandlerFunc {
 }
 
 func GetAllUsers(db *gorm.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		var users []models.User
+    return func(c *gin.Context) {
+        var users []models.User
 
-		// Fetch all users from the database
-		if err := db.Find(&users).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch users"})
-			return
-		}
+        if err := db.Find(&users).Error; err != nil {
+            c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch users"})
+            return
+        }
 
-		c.JSON(http.StatusOK, users)
-	}
+        // The users slice will be automatically serialized to JSON
+        c.JSON(http.StatusOK, users)
+    }
 }
 
 

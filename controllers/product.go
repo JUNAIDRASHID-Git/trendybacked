@@ -5,14 +5,14 @@ import (
 	"net/http"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
-
 	"github.com/gin-gonic/gin"
 	"github.com/junaidrashid-git/ecommerce-api/models"
 	"gorm.io/gorm"
 )
 
-// CreateProduct handles the creation of a new product.
+// CreateProduct handles the creation of a new product with multiple categories.
 func CreateProduct(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		name := c.PostForm("name")
@@ -21,14 +21,14 @@ func CreateProduct(db *gorm.DB) gin.HandlerFunc {
 		regularPriceStr := c.PostForm("regular_price")
 		baseCostStr := c.PostForm("base_cost")
 		weightStr := c.PostForm("weight")
+		categoryIDsStr := c.PostForm("category_ids") // Comma-separated category IDs (e.g., "1,3,5")
 
-		// Validate required fields
-		if name == "" || salePriceStr == "" || weightStr == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Name, Sale Price, and Weight are required"})
+		if name == "" || salePriceStr == "" || weightStr == "" || categoryIDsStr == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Name, Sale Price, Weight, and Categories are required"})
 			return
 		}
 
-		// Parse and validate required fields
+		// Parse numeric fields
 		salePrice, err := strconv.ParseFloat(salePriceStr, 64)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid sale price"})
@@ -41,9 +41,7 @@ func CreateProduct(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		// Parse optional fields
-		var regularPrice, baseCost float64
-
+		var regularPrice float64
 		if regularPriceStr != "" {
 			regularPrice, err = strconv.ParseFloat(regularPriceStr, 64)
 			if err != nil {
@@ -52,6 +50,7 @@ func CreateProduct(db *gorm.DB) gin.HandlerFunc {
 			}
 		}
 
+		var baseCost float64
 		if baseCostStr != "" {
 			baseCost, err = strconv.ParseFloat(baseCostStr, 64)
 			if err != nil {
@@ -60,16 +59,32 @@ func CreateProduct(db *gorm.DB) gin.HandlerFunc {
 			}
 		}
 
-		// Handle image upload
+		// Parse category IDs
+		var categoryIDs []uint
+		for _, idStr := range strings.Split(categoryIDsStr, ",") {
+			id, err := strconv.ParseUint(strings.TrimSpace(idStr), 10, 64)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid category ID: " + idStr})
+				return
+			}
+			categoryIDs = append(categoryIDs, uint(id))
+		}
+
+		// Get categories
+		var categories []models.Category
+		if err := db.Where("id IN ?", categoryIDs).Find(&categories).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch categories"})
+			return
+		}
+
+		// Handle image
 		file, err := c.FormFile("image")
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Image is required"})
 			return
 		}
-
 		filename := fmt.Sprintf("%d_%s", time.Now().Unix(), filepath.Base(file.Filename))
 		filePath := "uploads/" + filename
-
 		if err := c.SaveUploadedFile(file, filePath); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save image"})
 			return
@@ -83,10 +98,11 @@ func CreateProduct(db *gorm.DB) gin.HandlerFunc {
 			BaseCost:     baseCost,
 			Weight:       weight,
 			Image:        "/" + filePath,
+			Categories:   categories,
 		}
 
 		if err := db.Create(&product).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save product"})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create product"})
 			return
 		}
 
@@ -114,12 +130,12 @@ func DeleteProduct(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
-// GetProducts fetches all products.
+// GetProducts fetches all products including their categories.
 func GetProducts(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var products []models.Product
 
-		if err := db.Find(&products).Error; err != nil {
+		if err := db.Preload("Categories").Find(&products).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch products"})
 			return
 		}

@@ -19,7 +19,7 @@ func main() {
 	}
 
 	db := initDatabase()
-	db.AutoMigrate(&models.User{}, &models.Product{})
+	db.AutoMigrate(&models.User{}, &models.Product{},&models.Category{})
 
 	r := gin.Default()
 
