@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
 	"github.com/gin-gonic/gin"
 	"github.com/junaidrashid-git/ecommerce-api/models"
 	"gorm.io/gorm"
@@ -23,7 +24,9 @@ func CreateProduct(db *gorm.DB) gin.HandlerFunc {
 		weightStr := c.PostForm("weight")
 		categoryIDsStr := c.PostForm("category_ids") // Comma-separated category IDs (e.g., "1,3,5")
 
-		if name == "" || salePriceStr == "" || weightStr == "" || categoryIDsStr == "" {
+		// required field
+
+		if name == "" || salePriceStr == "" || weightStr == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Name, Sale Price, Weight, and Categories are required"})
 			return
 		}
@@ -60,21 +63,23 @@ func CreateProduct(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		// Parse category IDs
-		var categoryIDs []uint
-		for _, idStr := range strings.Split(categoryIDsStr, ",") {
-			id, err := strconv.ParseUint(strings.TrimSpace(idStr), 10, 64)
-			if err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid category ID: " + idStr})
+		// Get categories (optional)
+		var categories []models.Category
+		if categoryIDsStr != "" {
+			var categoryIDs []uint
+			for _, idStr := range strings.Split(categoryIDsStr, ",") {
+				id, err := strconv.ParseUint(strings.TrimSpace(idStr), 10, 64)
+				if err != nil {
+					c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid category ID: " + idStr})
+					return
+				}
+				categoryIDs = append(categoryIDs, uint(id))
+			}
+
+			if err := db.Where("id IN ?", categoryIDs).Find(&categories).Error; err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch categories"})
 				return
 			}
-			categoryIDs = append(categoryIDs, uint(id))
-		}
-
-		// Get categories
-		var categories []models.Category
-		if err := db.Where("id IN ?", categoryIDs).Find(&categories).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch categories"})
-			return
 		}
 
 		// Handle image

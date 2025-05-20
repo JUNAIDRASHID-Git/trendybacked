@@ -9,19 +9,28 @@ import (
 )
 
 func SetupRoutes(r *gin.Engine, db *gorm.DB) {
-
-	// Google Auth Route
+	// Public routes (no auth)
 	r.POST("/auth/google", auth.GoogleAuthHandler(db))
-	// Protect /users route with JWT middleware
-	r.GET("/users", middleware.ValidateToken, controllers.GetUser(db))
-	// Protect /users/all route with API key middleware
-	// This route is for admin access to get all users
-	r.GET("/users/all", controllers.GetAllUsers(db))
-	// Protect /products route with API key middleware
-	// This route is for admin access to create and get products
-	r.POST("/products", middleware.ValidateAPIKey, controllers.CreateProduct(db))
-	r.DELETE("/products/:id", middleware.ValidateAPIKey, controllers.DeleteProduct(db))
-	r.GET("/products", middleware.ValidateAPIKey, controllers.GetProducts(db))
-	r.POST("/products/import-excel", controllers.ImportProductsFromExcel(db))
 
+	// User routes with JWT middleware
+	userGroup := r.Group("/user")
+	userGroup.Use(middleware.ValidateToken)
+	{
+		userGroup.GET("", controllers.GetUser(db))
+		userGroup.PUT("", controllers.UpdateUser(db))
+		userGroup.GET("/cart", controllers.GetUserCart(db))
+		userGroup.POST("/cart", controllers.UpdateCartItem(db))
+		userGroup.DELETE("/cart/:product_id", controllers.DeleteCartItem(db))
+	}
+
+	// Admin routes with API key middleware
+	adminGroup := r.Group("/admin")
+	adminGroup.Use(middleware.ValidateAPIKey)
+	{
+		adminGroup.GET("/users", controllers.GetAllUsers(db))
+		adminGroup.POST("/products", controllers.CreateProduct(db))
+		adminGroup.DELETE("/products/:id", controllers.DeleteProduct(db))
+		adminGroup.GET("/products", controllers.GetProducts(db))
+		adminGroup.POST("/products/import-excel", controllers.ImportProductsFromExcel(db))
+	}
 }
