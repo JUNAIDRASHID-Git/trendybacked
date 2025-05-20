@@ -6,7 +6,7 @@ import (
 	"os"
 )
 
-const APIKeyHeader = "X-API-KEY"
+
 
 func ValidateAPIKey(c *gin.Context) {
 	apiKey := c.GetHeader("X-API-KEY")

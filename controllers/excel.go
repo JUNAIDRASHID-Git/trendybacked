@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -19,15 +20,13 @@ func ImportProductsFromExcel(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		// Open uploaded Excel file
 		src, err := file.Open()
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to open file"})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to open uploaded file"})
 			return
 		}
 		defer src.Close()
 
-		// Parse Excel
 		f, err := excelize.OpenReader(src)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid Excel file"})
@@ -36,42 +35,77 @@ func ImportProductsFromExcel(db *gorm.DB) gin.HandlerFunc {
 
 		rows, err := f.GetRows("Sheet1")
 		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to read sheet"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to read sheet 'Sheet1'"})
+			return
+		}
+
+		if len(rows) <= 1 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "No data found in Excel"})
 			return
 		}
 
 		var products []models.Product
+
 		for i, row := range rows {
 			if i == 0 {
-				continue // Skip header
-			}
-			if len(row) < 6 {
-				continue // Skip invalid rows
+				continue // Skip header row
 			}
 
-			name := row[0]
-			description := row[1]
-			salePrice, _ := strconv.ParseFloat(row[2], 64)
-			regularPrice, _ := strconv.ParseFloat(row[3], 64)
-			weight, _ := strconv.ParseFloat(row[4], 64)
-			image := row[5]
-			var categoryIDs []uint
+			// Require at least: name (0), sale_price (2), weight (4)
+			if len(row) < 5 || strings.TrimSpace(row[0]) == "" || strings.TrimSpace(row[2]) == "" || strings.TrimSpace(fmt.Sprintf("%v", row[4])) == "" {
+				continue
+			}
 
-			// Optional: Parse category IDs
-			if len(row) > 6 {
-				for _, idStr := range strings.Split(row[6], ",") {
-					id, err := strconv.ParseUint(strings.TrimSpace(idStr), 10, 64)
-					if err == nil {
-						categoryIDs = append(categoryIDs, uint(id))
-					}
+			name := strings.TrimSpace(row[0])
+			description := ""
+			if len(row) > 1 {
+				description = strings.TrimSpace(row[1])
+			}
+
+			salePrice, err := strconv.ParseFloat(strings.TrimSpace(row[2]), 64)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Invalid sale price on row %d", i+1)})
+				return
+			}
+
+			regularPrice := 0.0
+			if len(row) > 3 && row[3] != "" {
+				regularPrice, err = strconv.ParseFloat(strings.TrimSpace(row[3]), 64)
+				if err != nil {
+					c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Invalid regular price on row %d", i+1)})
+					return
 				}
 			}
 
-			// Fetch categories
+			weight, err := strconv.ParseFloat(fmt.Sprintf("%v", row[4]), 64)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Invalid weight on row %d", i+1)})
+				return
+			}
+
+			image := "/images/default_product_image.jpg"
+			if len(row) > 5 && strings.TrimSpace(row[5]) != "" {
+				image = strings.TrimSpace(row[5])
+			}
+
+			baseCost := 0.0 // You can extend this to read from Excel later
+
 			var categories []models.Category
-			if len(categoryIDs) > 0 {
-				if err := db.Where("id IN ?", categoryIDs).Find(&categories).Error; err != nil {
-					continue // Skip this row on category fetch error
+			if len(row) > 6 && strings.TrimSpace(row[6]) != "" {
+				categoryIDs := strings.Split(row[6], ",")
+				for _, idStr := range categoryIDs {
+					idStr = strings.TrimSpace(idStr)
+					if idStr == "" {
+						continue
+					}
+					catID, err := strconv.ParseUint(idStr, 10, 64)
+					if err != nil {
+						continue
+					}
+					var category models.Category
+					if err := db.First(&category, catID).Error; err == nil {
+						categories = append(categories, category)
+					}
 				}
 			}
 
@@ -80,19 +114,36 @@ func ImportProductsFromExcel(db *gorm.DB) gin.HandlerFunc {
 				Description:  description,
 				SalePrice:    salePrice,
 				RegularPrice: regularPrice,
-				Weight:       weight,
+				BaseCost:     baseCost,
 				Image:        image,
+				Weight:       weight,
 				Categories:   categories,
 			}
+
 			products = append(products, product)
 		}
 
-		// Bulk insert
-		if err := db.Create(&products).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to import products"})
+		if len(products) == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "No valid products found to import"})
 			return
 		}
 
-		c.JSON(http.StatusOK, gin.H{"message": "Products imported successfully", "count": len(products)})
+		for _, product := range products {
+			if err := db.Create(&product).Error; err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to save product: %s", product.Name)})
+				return
+			}
+			if len(product.Categories) > 0 {
+				if err := db.Model(&product).Association("Categories").Replace(product.Categories); err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to associate categories"})
+					return
+				}
+			}
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"message": "Products imported successfully",
+			"count":   len(products),
+		})
 	}
 }
