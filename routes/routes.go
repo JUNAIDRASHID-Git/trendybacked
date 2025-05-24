@@ -29,6 +29,7 @@ func SetupRoutes(r *gin.Engine, db *gorm.DB) {
 	{
 		adminGroup.GET("/users", controllers.GetAllUsers(db))
 		adminGroup.POST("/products", controllers.CreateProduct(db))
+		adminGroup.PUT("/products/:id", controllers.UpdateProduct(db))
 		adminGroup.DELETE("/products/:id", controllers.DeleteProduct(db))
 		adminGroup.GET("/products", controllers.GetProducts(db))
 		adminGroup.POST("/products/import-excel", controllers.ImportProductsFromExcel(db))

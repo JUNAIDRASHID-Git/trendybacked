@@ -1,149 +1,123 @@
 package controllers
 
 import (
-	"fmt"
-	"net/http"
-	"strconv"
-	"strings"
-
 	"github.com/gin-gonic/gin"
 	"github.com/junaidrashid-git/ecommerce-api/models"
-	"github.com/xuri/excelize/v2"
+	"github.com/tealeg/xlsx"
 	"gorm.io/gorm"
+	"net/http"
+	"strconv"
 )
 
 func ImportProductsFromExcel(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		file, err := c.FormFile("file")
+		// 1. Get Excel file
+		excelFileHeader, err := c.FormFile("file")
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Excel file is required"})
 			return
 		}
 
-		src, err := file.Open()
+		excelFile, err := excelFileHeader.Open()
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to open uploaded file"})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to open Excel file"})
 			return
 		}
-		defer src.Close()
+		defer excelFile.Close()
 
-		f, err := excelize.OpenReader(src)
+		// 2. Parse Excel file
+		xlFile, err := xlsx.OpenReaderAt(excelFile, excelFileHeader.Size)
 		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid Excel file"})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse Excel file"})
 			return
 		}
 
-		rows, err := f.GetRows("Sheet1")
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to read sheet 'Sheet1'"})
+		if len(xlFile.Sheets) == 0 || xlFile.Sheets[0].MaxRow == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Excel file is empty"})
 			return
 		}
 
-		if len(rows) <= 1 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "No data found in Excel"})
-			return
-		}
+		sheet := xlFile.Sheets[0]
 
-		var products []models.Product
+		createdCount := 0
+		updatedCount := 0
+		skippedCount := 0
 
-		for i, row := range rows {
-			if i == 0 {
-				continue // Skip header row
+		// 3. Loop through rows
+		for i := 1; i < sheet.MaxRow; i++ {
+			row := sheet.Rows[i]
+			if len(row.Cells) < 8 {
+				skippedCount++
+				continue // skip incomplete rows
 			}
 
-			// Require at least: name (0), sale_price (2), weight (4)
-			if len(row) < 5 || strings.TrimSpace(row[0]) == "" || strings.TrimSpace(row[2]) == "" || strings.TrimSpace(fmt.Sprintf("%v", row[4])) == "" {
+			idStr := row.Cells[0].String()
+			ename := row.Cells[1].String()
+			arname := row.Cells[2].String()
+			endescription := row.Cells[3].String()
+			ardescription := row.Cells[4].String()
+			salePriceStr := row.Cells[5].String()
+			regularPriceStr := row.Cells[6].String()
+			baseCostStr := row.Cells[7].String()
+			weightStr := row.Cells[8].String()
+
+			// Required field validation
+			if ename == "" || salePriceStr == "" || weightStr == "" {
+				skippedCount++
 				continue
 			}
 
-			name := strings.TrimSpace(row[0])
-			description := ""
-			if len(row) > 1 {
-				description = strings.TrimSpace(row[1])
-			}
-
-			salePrice, err := strconv.ParseFloat(strings.TrimSpace(row[2]), 64)
-			if err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Invalid sale price on row %d", i+1)})
-				return
-			}
-
-			regularPrice := 0.0
-			if len(row) > 3 && row[3] != "" {
-				regularPrice, err = strconv.ParseFloat(strings.TrimSpace(row[3]), 64)
-				if err != nil {
-					c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Invalid regular price on row %d", i+1)})
-					return
-				}
-			}
-
-			weight, err := strconv.ParseFloat(fmt.Sprintf("%v", row[4]), 64)
-			if err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Invalid weight on row %d", i+1)})
-				return
-			}
-
-			image := "/images/default_product_image.jpg"
-			if len(row) > 5 && strings.TrimSpace(row[5]) != "" {
-				image = strings.TrimSpace(row[5])
-			}
-
-			baseCost := 0.0 // You can extend this to read from Excel later
-
-			var categories []models.Category
-			if len(row) > 6 && strings.TrimSpace(row[6]) != "" {
-				categoryIDs := strings.Split(row[6], ",")
-				for _, idStr := range categoryIDs {
-					idStr = strings.TrimSpace(idStr)
-					if idStr == "" {
-						continue
-					}
-					catID, err := strconv.ParseUint(idStr, 10, 64)
-					if err != nil {
-						continue
-					}
-					var category models.Category
-					if err := db.First(&category, catID).Error; err == nil {
-						categories = append(categories, category)
-					}
-				}
-			}
+			// Parse numerical values
+			salePrice, _ := strconv.ParseFloat(salePriceStr, 64)
+			regularPrice, _ := strconv.ParseFloat(regularPriceStr, 64)
+			baseCost, _ := strconv.ParseFloat(baseCostStr, 64)
+			weight, _ := strconv.ParseFloat(weightStr, 64)
 
 			product := models.Product{
-				Name:         name,
-				Description:  description,
-				SalePrice:    salePrice,
-				RegularPrice: regularPrice,
-				BaseCost:     baseCost,
-				Image:        image,
-				Weight:       weight,
-				Categories:   categories,
+				EName:         ename,
+				ARName:        arname,
+				EDescription:  endescription,
+				ARDescription: ardescription,
+				SalePrice:     salePrice,
+				RegularPrice:  regularPrice,
+				BaseCost:      baseCost,
+				Weight:        weight,
 			}
 
-			products = append(products, product)
-		}
+			// Update if ID is present
+			if idStr != "" {
+				if id, err := strconv.Atoi(idStr); err == nil {
+					var existing models.Product
+					if err := db.First(&existing, id).Error; err == nil {
+						existing.EName = product.EName
+						existing.ARName = product.ARName
+						existing.EDescription = product.EDescription
+						existing.ARDescription = product.ARDescription
+						existing.SalePrice = product.SalePrice
+						existing.RegularPrice = product.RegularPrice
+						existing.BaseCost = product.BaseCost
+						existing.Weight = product.Weight
 
-		if len(products) == 0 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "No valid products found to import"})
-			return
-		}
-
-		for _, product := range products {
-			if err := db.Create(&product).Error; err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to save product: %s", product.Name)})
-				return
-			}
-			if len(product.Categories) > 0 {
-				if err := db.Model(&product).Association("Categories").Replace(product.Categories); err != nil {
-					c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to associate categories"})
-					return
+						if err := db.Save(&existing).Error; err == nil {
+							updatedCount++
+							continue
+						}
+					}
 				}
 			}
+
+			// Create if new
+			if err := db.Create(&product).Error; err == nil {
+				createdCount++
+			}
 		}
 
+		// 4. Respond with summary
 		c.JSON(http.StatusOK, gin.H{
-			"message": "Products imported successfully",
-			"count":   len(products),
+			"message":       "Import completed",
+			"created_count": createdCount,
+			"updated_count": updatedCount,
+			"skipped_count": skippedCount,
 		})
 	}
 }

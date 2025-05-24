@@ -7,16 +7,18 @@ import (
 )
 
 type Product struct {
-	ID           uint           `gorm:"primaryKey;autoIncrement"`
-	Name         string         `gorm:"not null"`
-	Description  string
-	SalePrice    float64        `gorm:"not null"`
-	RegularPrice float64
-	BaseCost     float64
-	Image        string         `gorm:"not null"`
-	Weight       float64        `gorm:"not null"`
-	Categories   []Category     `gorm:"many2many:product_categories;"` // 💡 Many-to-many relationship
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
-	DeletedAt    gorm.DeletedAt `gorm:"index"`
+	ID            uint    `gorm:"primaryKey;autoIncrement"`
+	EName         string  `gorm:"not null"` // English Name
+	ARName        string  // Arabic Name
+	EDescription  string  // English Description
+	ARDescription string  // Arabic Description
+	SalePrice     float64 `gorm:"not null"` // Required
+	RegularPrice  float64
+	BaseCost      float64
+	Image         string     `gorm:"not null"`
+	Weight        float64    `gorm:"not null"` // Required
+	Categories    []Category `gorm:"many2many:product_categories;"`
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+	DeletedAt     gorm.DeletedAt `gorm:"index"`
 }
