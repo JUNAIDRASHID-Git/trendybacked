@@ -1,10 +1,10 @@
 package main
 
 import (
-	
 	"log"
 	"os"
-
+	"time"
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 	"github.com/junaidrashid-git/ecommerce-api/models"
@@ -47,6 +47,15 @@ func main() {
 	// ✅ Set up Gin router
 	r := gin.Default()
 
+	r.Use(cors.New(cors.Config{
+		AllowOrigins:     []string{"*"}, // or list your front-end domain(s)
+		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-API-KEY"},
+		ExposeHeaders:    []string{"Content-Length"},
+		AllowCredentials: true,
+		MaxAge:           12 * time.Hour,
+	}))
+
 	// ✅ Serve uploaded images
 	r.Static("/uploads", "./uploads")
 
@@ -66,36 +75,15 @@ func main() {
 	}
 }
 
-// func initDatabase() *gorm.DB {
-// 	host := os.Getenv("DB_HOST")
-// 	port := os.Getenv("DB_PORT")
-// 	user := os.Getenv("DB_USER")
-// 	password := os.Getenv("DB_PASSWORD")
-// 	dbname := os.Getenv("DB_NAME")
-
-// 	dsn := fmt.Sprintf(
-// 		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
-// 		host, port, user, password, dbname,
-// 	)
-
-// 	log.Printf("🔗 Connecting to database: %s@%s:%s/%s", user, host, port, dbname)
-// 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
-// 	if err != nil {
-// 		log.Fatalf("❌ Failed to connect to database: %v", err)
-// 	}
-
-// 	return db
-// }
-
 func initDatabase() *gorm.DB {
-    dsn := os.Getenv("DATABASE_URL")
-    if dsn == "" {
-        log.Fatal("DATABASE_URL is not set")
-    }
-    log.Printf("🔗 Connecting to database via DATABASE_URL")
-    db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
-    if err != nil {
-        log.Fatalf("❌ Failed to connect to database: %v", err)
-    }
-    return db
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		log.Fatal("DATABASE_URL is not set")
+	}
+	log.Printf("🔗 Connecting to database via DATABASE_URL")
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		log.Fatalf("❌ Failed to connect to database: %v", err)
+	}
+	return db
 }
