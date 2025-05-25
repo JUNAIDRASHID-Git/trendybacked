@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	
 	"log"
 	"os"
 
@@ -66,23 +66,36 @@ func main() {
 	}
 }
 
+// func initDatabase() *gorm.DB {
+// 	host := os.Getenv("DB_HOST")
+// 	port := os.Getenv("DB_PORT")
+// 	user := os.Getenv("DB_USER")
+// 	password := os.Getenv("DB_PASSWORD")
+// 	dbname := os.Getenv("DB_NAME")
+
+// 	dsn := fmt.Sprintf(
+// 		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
+// 		host, port, user, password, dbname,
+// 	)
+
+// 	log.Printf("🔗 Connecting to database: %s@%s:%s/%s", user, host, port, dbname)
+// 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+// 	if err != nil {
+// 		log.Fatalf("❌ Failed to connect to database: %v", err)
+// 	}
+
+// 	return db
+// }
+
 func initDatabase() *gorm.DB {
-	host := os.Getenv("DB_HOST")
-	port := os.Getenv("DB_PORT")
-	user := os.Getenv("DB_USER")
-	password := os.Getenv("DB_PASSWORD")
-	dbname := os.Getenv("DB_NAME")
-
-	dsn := fmt.Sprintf(
-		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
-		host, port, user, password, dbname,
-	)
-
-	log.Printf("🔗 Connecting to database: %s@%s:%s/%s", user, host, port, dbname)
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
-	if err != nil {
-		log.Fatalf("❌ Failed to connect to database: %v", err)
-	}
-
-	return db
+    dsn := os.Getenv("DATABASE_URL")
+    if dsn == "" {
+        log.Fatal("DATABASE_URL is not set")
+    }
+    log.Printf("🔗 Connecting to database via DATABASE_URL")
+    db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+    if err != nil {
+        log.Fatalf("❌ Failed to connect to database: %v", err)
+    }
+    return db
 }
