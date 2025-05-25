@@ -20,6 +20,7 @@ func SetupRoutes(r *gin.Engine, db *gorm.DB) {
 		userGroup.PUT("", controllers.UpdateUser(db))
 		userGroup.GET("/cart", controllers.GetUserCart(db))
 		userGroup.POST("/cart", controllers.UpdateCartItem(db))
+		userGroup.GET("/products", controllers.GetProducts(db))
 		userGroup.DELETE("/cart/:product_id", controllers.DeleteCartItem(db))
 	}
 
