@@ -5,13 +5,9 @@ services:
     name: ecommerce-api
     env: go
     plan: free
-    # Build your binary
     buildCommand: go build -o ecommerce-api
-    # Run your binary
     startCommand: ./ecommerce-api
-    # Tell Render to watch for changes and redeploy
     autoDeploy: true
-    # Expose port 8080 to the world
     envVars:
       - key: PORT
         value: "8080"
@@ -19,13 +15,11 @@ services:
         fromDatabase:
           name: ecommerce-db
           property: connectionString
-      - key: COST_API_KEY        # your custom API key
+      - key: COST_API_KEY
         sync: false
 
 databases:
-  - name: ecommerce-db        # internal name in Render
-    engine: postgres
-    version: "15"             # pick the Postgres version you need
+  - name: ecommerce-db         # internal name in Render; must match fromDatabase.name
     plan: free
     databaseName: ecommerce
     user: ecommerce_user
