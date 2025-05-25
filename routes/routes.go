@@ -16,8 +16,8 @@ func SetupRoutes(r *gin.Engine, db *gorm.DB) {
 	userGroup := r.Group("/user")
 	userGroup.Use(middleware.ValidateToken)
 	{
-		userGroup.GET("", controllers.GetUser(db))
-		userGroup.PUT("", controllers.UpdateUser(db))
+		userGroup.GET("/user", controllers.GetUser(db))
+		userGroup.PUT("/user", controllers.UpdateUser(db))
 		userGroup.GET("/cart", controllers.GetUserCart(db))
 		userGroup.POST("/cart", controllers.UpdateCartItem(db))
 		userGroup.GET("/products", controllers.GetProducts(db))
