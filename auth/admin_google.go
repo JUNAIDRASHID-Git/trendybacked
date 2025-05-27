@@ -25,20 +25,15 @@ var (
 )
 
 func init() {
-	// Load .env file if present
-	if err := godotenv.Load(); err != nil {
-		log.Println("⚠️  No .env file found, proceeding with environment variables")
-	}
+	// Load .env locally
+	_ = godotenv.Load()
 
 	ctx := context.Background()
 
-	// If FIREBASE_CREDENTIALS_PATH is not set, fall back to GOOGLE_APPLICATION_CREDENTIALS
-	credsPath := os.Getenv("FIREBASE_CREDENTIALS_JSON")
-	if credsPath == "" {
-		credsPath = os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")
-	}
-	if credsPath == "" {
-		log.Fatal("❌ FIREBASE_CREDENTIALS_PATH or GOOGLE_APPLICATION_CREDENTIALS must be set to your service account JSON")
+	// Read the whole JSON blob out of the ENV
+	credsJSON := os.Getenv("FIREBASE_CREDENTIALS_JSON")
+	if credsJSON == "" {
+		log.Fatal("❌ FIREBASE_CREDENTIALS_JSON must be set")
 	}
 
 	projectID = os.Getenv("FIREBASE_PROJECT_ID")
@@ -46,8 +41,8 @@ func init() {
 		log.Fatal("❌ FIREBASE_PROJECT_ID must be set")
 	}
 
-	// Initialize Firebase
-	opt := option.WithCredentialsFile(credsPath)
+	// INITIALIZE FIREBASE with the JSON directly (no file!)
+	opt := option.WithCredentialsJSON([]byte(credsJSON))
 	config := &firebase.Config{ProjectID: projectID}
 
 	var err error
