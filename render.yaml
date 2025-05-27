@@ -1,25 +1,31 @@
-# render.yaml
-
 services:
   - type: web
     name: ecommerce-api
-    env: go
+    env: docker
     plan: free
-    buildCommand: go build -o ecommerce-api
-    startCommand: ./ecommerce-api
-    autoDeploy: true
+    region: oregon
+    dockerfilePath: ./Dockerfile
     envVars:
       - key: PORT
         value: "8080"
-      - key: DATABASE_URL
-        fromDatabase:
-          name: ecommerce-db
-          property: connectionString
-      - key: COST_API_KEY
-        sync: false
-
-databases:
-  - name: ecommerce-db         # internal name in Render; must match fromDatabase.name
-    plan: free
-    databaseName: ecommerce
-    user: ecommerce_user
+      - key: DB_HOST
+        value: your-db-host
+      - key: DB_PORT
+        value: "5432"
+      - key: DB_USER
+        value: your-db-user
+      - key: DB_PASSWORD
+        value: your-db-password
+      - key: DB_NAME
+        value: your-db-name
+      - key: FIREBASE_PROJECT_ID
+        value: your-firebase-project-id
+      - key: FIREBASE_CREDENTIALS_PATH
+        value: /etc/secrets/firebase-credentials.json
+      - key: SUPER_ADMIN_EMAIL
+        value: your-super-admin@example.com
+      - key: JWT_SECRET
+        value: your-strong-jwt-secret
+    secretFiles:
+      - name: firebase-credentials.json
+        path: /etc/secrets/firebase-credentials.json
