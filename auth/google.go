@@ -9,9 +9,8 @@ import (
 	"net/http"
 	"os"
 	"time"
-
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v5"
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/junaidrashid-git/ecommerce-api/models"
 	"gorm.io/gorm"
 )

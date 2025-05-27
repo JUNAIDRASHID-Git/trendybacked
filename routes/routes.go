@@ -12,6 +12,11 @@ func SetupRoutes(r *gin.Engine, db *gorm.DB) {
 	// Public routes (no auth)
 	r.POST("/auth/google", auth.GoogleAuthHandler(db))
 
+	// Google Admin login handler (wrapped for Gin)
+	r.POST("/auth/google-admin", func(c *gin.Context) {
+		auth.GoogleAdminLoginHandler(c.Writer, c.Request, db)
+	})
+
 	// User routes with JWT middleware
 	userGroup := r.Group("/user")
 	userGroup.Use(middleware.ValidateToken)
@@ -28,11 +33,19 @@ func SetupRoutes(r *gin.Engine, db *gorm.DB) {
 	adminGroup := r.Group("/admin")
 	adminGroup.Use(middleware.ValidateAPIKey)
 	{
+		adminGroup.GET("/admins", func(c *gin.Context) {
+			controllers.GetAllAdminsHandler(c.Writer, c.Request, db)
+		})
 		adminGroup.GET("/users", controllers.GetAllUsers(db))
 		adminGroup.POST("/products", controllers.CreateProduct(db))
 		adminGroup.PUT("/products/:id", controllers.UpdateProduct(db))
 		adminGroup.DELETE("/products/:id", controllers.DeleteProduct(db))
 		adminGroup.GET("/products", controllers.GetProducts(db))
 		adminGroup.POST("/products/import-excel", controllers.ImportProductsFromExcel(db))
+
+		// Admin management routes
+		adminGroup.GET("/pending-admins", auth.ListPendingAdmins(db))
+		adminGroup.POST("/approve-admin", auth.ApproveAdmin(db))
+		adminGroup.POST("/reject-admin", auth.RejectAdmin(db))
 	}
 }
