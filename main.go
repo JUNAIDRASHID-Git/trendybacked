@@ -18,40 +18,39 @@ import (
 func main() {
 	log.Println("✅ Starting application...")
 
-	// ✅ Load environment variables
+	// Load environment variables
 	if err := godotenv.Load(); err != nil {
 		log.Println("ℹ️  No .env file found. Using environment variables set by Render or OS.")
 	} else {
 		log.Println("✅ .env file loaded successfully.")
 	}
 
-	// ✅ Log important environment variables
-	requiredEnvVars := []string{"PORT", "DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME"}
+	// Log important environment variables
+	requiredEnvVars := []string{"PORT", "DATABASE_URL", "DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME"}
 	for _, key := range requiredEnvVars {
-		val := os.Getenv(key)
-		if val == "" {
-			log.Printf("⚠️  WARNING: %s is not set!", key)
-		} else {
+		if val := os.Getenv(key); val != "" {
 			log.Printf("🔑 %s=%s", key, val)
+		} else {
+			log.Printf("⚠️  %s is not set!", key)
 		}
 	}
 
-	// ✅ Initialize database
+	// Initialize database
 	db := initDatabase()
 	log.Println("✅ Database connected successfully.")
 
-	// ✅ Auto-migrate tables
+	// Auto-migrate tables
 	if err := db.AutoMigrate(&models.User{}, &models.Product{}, &models.Category{}, &models.Admin{}); err != nil {
 		log.Fatalf("❌ AutoMigrate failed: %v", err)
 	}
 	log.Println("✅ Database tables migrated successfully.")
 
-	// ✅ Set up Gin router
+	// Set up Gin router
 	r := gin.Default()
 
-	// ✅ Configure CORS
+	// Configure CORS
 	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:8080"}, // Allow Flutter web dev app
+		AllowOrigins:     []string{"http://localhost:8080"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-API-KEY"},
 		ExposeHeaders:    []string{"Content-Length"},
@@ -59,17 +58,17 @@ func main() {
 		MaxAge:           12 * time.Hour,
 	}))
 
-	// ✅ Serve uploaded images
+	// Serve uploaded images
 	r.Static("/uploads", "./uploads")
 
-	// ✅ Set up routes
+	// Set up routes
 	routes.SetupRoutes(r, db)
 	log.Println("✅ Routes initialized.")
 
-	// ✅ Start server
+	// Start server
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "8080" // fallback default port
+		port = "8080"
 		log.Println("⚠️  PORT not set. Using default port 8080.")
 	}
 	log.Printf("🚀 Server starting on port %s...", port)
@@ -78,15 +77,25 @@ func main() {
 	}
 }
 
+// initDatabase sets up the GORM DB connection, preferring DATABASE_URL if set
 func initDatabase() *gorm.DB {
-	// Fetch environment variables
+	// If Render provides DATABASE_URL, use it directly
+	if databaseURL := os.Getenv("DATABASE_URL"); databaseURL != "" {
+		log.Println("🔗 Using DATABASE_URL for DB connection")
+		db, err := gorm.Open(postgres.Open(databaseURL), &gorm.Config{})
+		if err != nil {
+			log.Fatalf("❌ Failed to connect using DATABASE_URL: %v", err)
+		}
+		return db
+	}
+
+	// Fallback to individual DB_* variables
 	host := os.Getenv("DB_HOST")
 	port := os.Getenv("DB_PORT")
 	user := os.Getenv("DB_USER")
 	password := os.Getenv("DB_PASSWORD")
 	dbname := os.Getenv("DB_NAME")
 
-	// Check for missing env vars
 	if host == "" || port == "" || user == "" || password == "" || dbname == "" {
 		log.Fatal("❌ One or more DB environment variables are not set.")
 	}
@@ -97,14 +106,10 @@ func initDatabase() *gorm.DB {
 		host, user, password, dbname, port,
 	)
 
-	// Log connection details (no sensitive data)
 	log.Printf("🔗 Connecting to DB at host=%s, port=%s, dbname=%s, user=%s", host, port, dbname, user)
-
-	// Connect using GORM
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		log.Fatalf("❌ Failed to connect to database: %v", err)
 	}
-	log.Println("✅ Connected to local database successfully.")
 	return db
 }
