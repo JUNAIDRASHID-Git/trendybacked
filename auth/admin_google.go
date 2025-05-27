@@ -33,7 +33,7 @@ func init() {
 	ctx := context.Background()
 
 	// If FIREBASE_CREDENTIALS_PATH is not set, fall back to GOOGLE_APPLICATION_CREDENTIALS
-	credsPath := os.Getenv("FIREBASE_CREDENTIALS_PATH")
+	credsPath := os.Getenv("FIREBASE_CREDENTIALS_JSON")
 	if credsPath == "" {
 		credsPath = os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")
 	}
