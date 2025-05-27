@@ -1,9 +1,11 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"time"
+
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
@@ -39,7 +41,7 @@ func main() {
 	log.Println("✅ Database connected successfully.")
 
 	// ✅ Auto-migrate tables
-	if err := db.AutoMigrate(&models.User{}, &models.Product{}, &models.Category{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.Product{}, &models.Category{}, &models.Admin{}); err != nil {
 		log.Fatalf("❌ AutoMigrate failed: %v", err)
 	}
 	log.Println("✅ Database tables migrated successfully.")
@@ -47,8 +49,9 @@ func main() {
 	// ✅ Set up Gin router
 	r := gin.Default()
 
+	// ✅ Configure CORS
 	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"*"}, // or list your front-end domain(s)
+		AllowOrigins:     []string{"http://localhost:8080"}, // Allow Flutter web dev app
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-API-KEY"},
 		ExposeHeaders:    []string{"Content-Length"},
@@ -76,14 +79,32 @@ func main() {
 }
 
 func initDatabase() *gorm.DB {
-	dsn := os.Getenv("DATABASE_URL")
-	if dsn == "" {
-		log.Fatal("DATABASE_URL is not set")
+	// Fetch environment variables
+	host := os.Getenv("DB_HOST")
+	port := os.Getenv("DB_PORT")
+	user := os.Getenv("DB_USER")
+	password := os.Getenv("DB_PASSWORD")
+	dbname := os.Getenv("DB_NAME")
+
+	// Check for missing env vars
+	if host == "" || port == "" || user == "" || password == "" || dbname == "" {
+		log.Fatal("❌ One or more DB environment variables are not set.")
 	}
-	log.Printf("🔗 Connecting to database via DATABASE_URL")
+
+	// Build DSN
+	dsn := fmt.Sprintf(
+		"host=%s user=%s password=%s dbname=%s port=%s sslmode=disable",
+		host, user, password, dbname, port,
+	)
+
+	// Log connection details (no sensitive data)
+	log.Printf("🔗 Connecting to DB at host=%s, port=%s, dbname=%s, user=%s", host, port, dbname, user)
+
+	// Connect using GORM
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		log.Fatalf("❌ Failed to connect to database: %v", err)
 	}
+	log.Println("✅ Connected to local database successfully.")
 	return db
 }
