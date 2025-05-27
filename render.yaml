@@ -20,12 +20,9 @@ services:
         value: your-db-name
       - key: FIREBASE_PROJECT_ID
         value: your-firebase-project-id
-      - key: FIREBASE_CREDENTIALS_PATH
-        value: /etc/secrets/firebase-credentials.json
       - key: SUPER_ADMIN_EMAIL
         value: your-super-admin@example.com
       - key: JWT_SECRET
         value: your-strong-jwt-secret
-    secretFiles:
-      - name: firebase-credentials.json
-        path: /etc/secrets/firebase-credentials.json
+      - key: FIREBASE_CREDENTIALS_JSON
+        sync: false  # Will be filled in Render Dashboard
