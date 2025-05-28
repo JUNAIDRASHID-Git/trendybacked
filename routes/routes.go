@@ -33,15 +33,29 @@ func SetupRoutes(r *gin.Engine, db *gorm.DB) {
 	adminGroup := r.Group("/admin")
 	adminGroup.Use(middleware.ValidateAPIKey)
 	{
+
+		// all admin Fetching routes
 		adminGroup.GET("/admins", func(c *gin.Context) {
 			controllers.GetAllAdminsHandler(c.Writer, c.Request, db)
 		})
+
+		// all users fetching routes
 		adminGroup.GET("/users", controllers.GetAllUsers(db))
+
+		// products routes
 		adminGroup.POST("/products", controllers.CreateProduct(db))
 		adminGroup.PUT("/products/:id", controllers.UpdateProduct(db))
-		adminGroup.DELETE("/products/:id", controllers.DeleteProduct(db))
 		adminGroup.GET("/products", controllers.GetProducts(db))
+		adminGroup.DELETE("/products/:id", controllers.DeleteProduct(db))
+
+		// excel import product routes
 		adminGroup.POST("/products/import-excel", controllers.ImportProductsFromExcel(db))
+
+		// Categores routes
+		adminGroup.POST("/products/category", controllers.CreateCategory(db))
+		adminGroup.PUT("/products/category", controllers.UpdateCategory(db))
+		adminGroup.GET("/products/category", controllers.GetAllCategory(db))
+		adminGroup.DELETE("/products/category/:id", controllers.DeleteCategory(db))
 
 		// Admin management routes
 		adminGroup.GET("/pending-admins", auth.ListPendingAdmins(db))

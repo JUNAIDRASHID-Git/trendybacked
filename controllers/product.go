@@ -1,17 +1,18 @@
 package controllers
 
 import (
+	"context"
 	"fmt"
-	"log"
+	"github.com/cloudinary/cloudinary-go/v2/api/uploader"
+	"github.com/gin-gonic/gin"
+	"github.com/junaidrashid-git/ecommerce-api/models"
+	"github.com/junaidrashid-git/ecommerce-api/utils"
+	"gorm.io/gorm"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
-	"github.com/gin-gonic/gin"
-	"github.com/junaidrashid-git/ecommerce-api/models"
-	"gorm.io/gorm"
 )
 
 // CreateProduct handles the creation of a new product with multiple categories.
@@ -84,21 +85,38 @@ func CreateProduct(db *gorm.DB) gin.HandlerFunc {
 			}
 		}
 
-		// Handle image upload
+		// Handle image upload to Cloudinary
 		file, err := c.FormFile("image")
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Image is required"})
 			return
 		}
 
-		filename := fmt.Sprintf("%d_%s", time.Now().Unix(), filepath.Base(file.Filename))
-		filePath := "uploads/" + filename
-		if err := c.SaveUploadedFile(file, filePath); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save image"})
+		// Open the uploaded file
+		fileReader, err := file.Open()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to open image file"})
+			return
+		}
+		defer fileReader.Close()
+
+		// Initialize Cloudinary
+		cld := utils.InitCloudinary()
+
+		// Upload to Cloudinary
+		uploadResult, err := cld.Upload.Upload(context.Background(), fileReader, uploader.UploadParams{
+			Folder:   "ecommerce/products", // Optional: Folder path in Cloudinary
+			PublicID: fmt.Sprintf("%d_%s", time.Now().Unix(), strings.TrimSuffix(file.Filename, filepath.Ext(file.Filename))),
+		})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to upload image to Cloudinary"})
 			return
 		}
 
-		// Create product
+		// Use the secure URL from Cloudinary
+		imageURL := uploadResult.SecureURL
+
+		// Create product record
 		product := models.Product{
 			EName:         ename,
 			ARName:        arname,
@@ -108,7 +126,7 @@ func CreateProduct(db *gorm.DB) gin.HandlerFunc {
 			RegularPrice:  regularPrice,
 			BaseCost:      baseCost,
 			Weight:        weight,
-			Image:         "/" + filePath, // Keep leading slash for client URL use
+			Image:         imageURL, // Save Cloudinary URL
 			Categories:    categories,
 		}
 
@@ -197,33 +215,41 @@ func UpdateProduct(db *gorm.DB) gin.HandlerFunc {
 			product.Categories = categories
 		}
 
-		// Handle image upload if provided
+		// Handle new image upload if provided
 		file, err := c.FormFile("image")
 		if err == nil {
-			// Optional: Delete old image file if exists (and not default)
-			if product.Image != "" {
-				oldImagePath := strings.TrimPrefix(product.Image, "/")
-				if err := os.Remove(oldImagePath); err != nil && !os.IsNotExist(err) {
-					// Log error but don't block update
-					log.Printf("Failed to delete old image: %v", err)
-				}
-			}
-
-			// Save new image
-			filename := fmt.Sprintf("%d_%s", time.Now().Unix(), filepath.Base(file.Filename))
-			filePath := "uploads/" + filename
-			if err := c.SaveUploadedFile(file, filePath); err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save image"})
+			fileReader, err := file.Open()
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to open image file"})
 				return
 			}
-			product.Image = "/" + filePath
+			defer fileReader.Close()
+
+			cld := utils.InitCloudinary()
+
+			// Optionally: delete old image from Cloudinary
+			if product.Image != "" {
+				// Get public ID from old image URL
+				parts := strings.Split(product.Image, "/")
+				publicID := strings.TrimSuffix(parts[len(parts)-1], filepath.Ext(parts[len(parts)-1]))
+				cld.Upload.Destroy(context.Background(), uploader.DestroyParams{PublicID: "ecommerce/products/" + publicID})
+			}
+
+			// Upload new image
+			uploadResult, err := cld.Upload.Upload(context.Background(), fileReader, uploader.UploadParams{
+				Folder:   "ecommerce/products",
+				PublicID: fmt.Sprintf("%d_%s", time.Now().Unix(), strings.TrimSuffix(file.Filename, filepath.Ext(file.Filename))),
+			})
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to upload new image to Cloudinary"})
+				return
+			}
+			product.Image = uploadResult.SecureURL
 		} else if err != http.ErrMissingFile {
-			// Return error if the problem isn't "no file uploaded"
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid image upload"})
 			return
 		}
 
-		// Save the updated product
 		if err := db.Session(&gorm.Session{FullSaveAssociations: true}).Save(&product).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update product"})
 			return
