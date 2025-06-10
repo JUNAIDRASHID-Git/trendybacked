@@ -1,4 +1,4 @@
-package auth
+package adminController
 
 import (
 	"net/http"

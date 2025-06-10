@@ -93,11 +93,14 @@ func GoogleAdminLoginHandler(w http.ResponseWriter, r *http.Request, db *gorm.DB
 	name, _ := token.Claims["name"].(string)
 	picture, _ := token.Claims["picture"].(string)
 
+	// Extract Firebase user ID from token UID field
+	firebaseUserID := token.UID
+
 	superAdminEmail := os.Getenv("SUPER_ADMIN_EMAIL")
 
 	// Super admin shortcut
 	if email == superAdminEmail {
-		issueTokenAndRespond(w, email, "superadmin", name, picture)
+		issueTokenAndRespond(w, email, "superadmin", firebaseUserID, name, picture)
 		return
 	}
 
@@ -141,12 +144,12 @@ func GoogleAdminLoginHandler(w http.ResponseWriter, r *http.Request, db *gorm.DB
 	}
 
 	// Approved admin
-	issueTokenAndRespond(w, email, "admin", name, picture)
+	issueTokenAndRespond(w, email, "admin", firebaseUserID, name, picture)
 }
 
-// issueTokenAndRespond DRYs up issuing the JWT, setting the cookie (if you choose), and JSON.
-func issueTokenAndRespond(w http.ResponseWriter, email, role, name, picture string) {
-	jwtStr := generateJWT(email, role)
+// issueTokenAndRespond issues JWT and sends JSON response.
+func issueTokenAndRespond(w http.ResponseWriter, email, role, userID, name, picture string) {
+	jwtStr := generateJWT(email, role, userID)
 
 	// Optionally set as HttpOnly cookie here
 	// http.SetCookie(w, &http.Cookie{ /* ... */ })
@@ -160,11 +163,12 @@ func issueTokenAndRespond(w http.ResponseWriter, email, role, name, picture stri
 	})
 }
 
-func generateJWT(email, role string) string {
+func generateJWT(email, role, userID string) string {
 	claims := jwt.MapClaims{
-		"email": email,
-		"role":  role,
-		"exp":   time.Now().Add(24 * time.Hour).Unix(),
+		"email":   email,
+		"role":    role,
+		"user_id": userID, // Add user_id here
+		"exp":     time.Now().Add(24 * time.Hour).Unix(),
 	}
 	t := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	hmac := []byte(os.Getenv("JWT_SECRET"))

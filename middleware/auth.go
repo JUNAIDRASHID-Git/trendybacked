@@ -4,7 +4,6 @@ import (
 	"errors"
 	"net/http"
 	"os"
-	"strings"
 	"github.com/dgrijalva/jwt-go"
 	"github.com/gin-gonic/gin"
 )
@@ -19,9 +18,6 @@ func ValidateToken(c *gin.Context) {
 		c.Abort()
 		return
 	}
-
-	// The token is expected in the format: "Bearer <token>"
-	tokenString = strings.TrimPrefix(tokenString, "Bearer ")
 
 	// Parse the token
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {

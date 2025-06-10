@@ -1,4 +1,5 @@
-package controllers
+package productcontroller
+
 
 import (
 	"github.com/gin-gonic/gin"

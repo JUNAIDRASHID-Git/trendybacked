@@ -7,7 +7,6 @@ require (
 	github.com/cloudinary/cloudinary-go/v2 v2.10.0
 	github.com/gin-contrib/cors v1.7.5
 	github.com/gin-gonic/gin v1.10.1
-	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/joho/godotenv v1.5.1
 	github.com/tealeg/xlsx v1.0.5
 	google.golang.org/api v0.232.0

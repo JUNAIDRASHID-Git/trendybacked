@@ -18,6 +18,7 @@ type Product struct {
 	Image         string     `gorm:"not null"`
 	Weight        float64    `gorm:"not null"` // Required
 	Categories    []Category `gorm:"many2many:product_categories;"`
+	Stock         float64
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 	DeletedAt     gorm.DeletedAt `gorm:"index"`

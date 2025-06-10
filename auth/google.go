@@ -1,156 +1,115 @@
 package auth
 
 import (
+	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
-	"io"
+	firebase "firebase.google.com/go"
+	"github.com/junaidrashid-git/ecommerce-api/models"
+	"google.golang.org/api/option"
+	"gorm.io/gorm"
 	"log"
 	"net/http"
 	"os"
-	"time"
-	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v4"
-	"github.com/junaidrashid-git/ecommerce-api/models"
-	"gorm.io/gorm"
 )
 
-// --- Google Token Info Struct ---
-type GoogleTokenInfo struct {
-	Sub           string `json:"sub"`
-	Email         string `json:"email"`
-	EmailVerified string `json:"email_verified"`
-	Name          string `json:"name"`
-	Picture       string `json:"picture"`
-	Aud           string `json:"aud"`
-}
+// InitFirebase initializes Firebase app and auth client
+func InitFirebase() {
+	ctx := context.Background()
 
-// --- Google Auth Handler ---
-func GoogleAuthHandler(db *gorm.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		var body struct {
-			IDToken string `json:"id_token"`
-		}
-
-		// Step 1: Get the ID token from request body
-		if err := c.ShouldBindJSON(&body); err != nil || body.IDToken == "" {
-			log.Println("⚠️  Missing or invalid ID token in request.")
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Missing or invalid ID token"})
-			return
-		}
-
-		log.Println("✅ Received ID token from client. Verifying...")
-
-		// Step 2: Verify Google token
-		userData, err := verifyGoogleToken(body.IDToken)
-		if err != nil {
-			log.Printf("❌ Google token verification failed: %v\n", err)
-			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
-			return
-		}
-
-		log.Printf("✅ Google token verified for email: %s\n", userData.Email)
-
-		// Step 3: Find or create the user
-		user, err := findOrCreateUser(db, userData)
-		if err != nil {
-			log.Printf("❌ Database error: %v\n", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
-			return
-		}
-
-		log.Printf("✅ User %s authenticated.\n", user.Email)
-
-		// Step 4: Generate JWT token for the user
-		token, err := GenerateJWT(user.ID, user.Email)
-		if err != nil {
-			log.Printf("❌ Failed to generate JWT: %v\n", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
-			return
-		}
-
-		log.Printf("✅ JWT generated for user: %s\n", user.Email)
-
-		// Step 5: Return the token to the client
-		c.JSON(http.StatusOK, gin.H{"token": token})
+	credsJSON := os.Getenv("FIREBASE_CREDENTIALS_JSON")
+	if credsJSON == "" {
+		log.Fatal("FIREBASE_CREDENTIALS_JSON must be set")
 	}
-}
 
-// --- Token Verification Function ---
-func verifyGoogleToken(idToken string) (*GoogleTokenInfo, error) {
-	resp, err := http.Get("https://oauth2.googleapis.com/tokeninfo?id_token=" + idToken)
+	projectID = os.Getenv("FIREBASE_PROJECT_ID")
+	if projectID == "" {
+		log.Fatal("FIREBASE_PROJECT_ID must be set")
+	}
+
+	opt := option.WithCredentialsJSON([]byte(credsJSON))
+	config := &firebase.Config{ProjectID: projectID}
+
+	var err error
+	firebaseApp, err = firebase.NewApp(ctx, config, opt)
 	if err != nil {
-		return nil, fmt.Errorf("failed to contact Google: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("invalid Google token: %s", body)
+		log.Fatalf("Error initializing Firebase app: %v", err)
 	}
 
-	var tokenInfo GoogleTokenInfo
-	if err := json.NewDecoder(resp.Body).Decode(&tokenInfo); err != nil {
-		return nil, fmt.Errorf("invalid token structure: %v", err)
+	firebaseAuth, err = firebaseApp.Auth(ctx)
+	if err != nil {
+		log.Fatalf("Error getting Firebase Auth client: %v", err)
 	}
-
-	expectedAud := os.Getenv("GOOGLE_CLIENT_ID")
-	if expectedAud == "" {
-		return nil, errors.New("missing GOOGLE_CLIENT_ID in environment variables")
-	}
-
-	if tokenInfo.Aud != expectedAud {
-		return nil, errors.New("token audience mismatch")
-	}
-
-	return &tokenInfo, nil
 }
 
-// --- Create or Find User ---
-func findOrCreateUser(db *gorm.DB, info *GoogleTokenInfo) (*models.User, error) {
+// GoogleUserLoginHandler handles login/signup via Google OAuth ID token
+func GoogleUserLoginHandler(w http.ResponseWriter, r *http.Request, db *gorm.DB) {
+	var req struct {
+		IDToken string `json:"idToken"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.IDToken == "" {
+		http.Error(w, "Invalid request payload", http.StatusBadRequest)
+		return
+	}
+
+	ctx := context.Background()
+
+	token, err := firebaseAuth.VerifyIDTokenAndCheckRevoked(ctx, req.IDToken)
+	if err != nil {
+		log.Printf("ID token verification failed: %v", err)
+		http.Error(w, "Invalid or revoked ID token", http.StatusUnauthorized)
+		return
+	}
+
+	if token.Audience != projectID {
+		log.Printf("Token audience mismatch: got %q", token.Audience)
+		http.Error(w, "Invalid token audience", http.StatusUnauthorized)
+		return
+	}
+
+	email, ok := token.Claims["email"].(string)
+	if !ok || email == "" {
+		http.Error(w, "Email not found in token", http.StatusUnauthorized)
+		return
+	}
+	name, _ := token.Claims["name"].(string)
+	picture, _ := token.Claims["picture"].(string)
+
+	firebaseUserID := token.UID
+
 	var user models.User
-	result := db.First(&user, "id = ?", info.Sub)
+	err = db.Where("email = ?", email).First(&user).Error
+	if err == gorm.ErrRecordNotFound {
+		user = models.User{
+			ID:       firebaseUserID,
+			Email:    email,
+			Name:     name,
+			Picture:  picture,
+			Provider: "google",
+		}
 
-	// If user is found, return the existing user
-	if result.Error == nil {
-		log.Printf("ℹ️  User %s found in database.\n", info.Email)
-		return &user, nil
+		// ✅ FIX: removed .Omit("ID")
+		if err := db.Create(&user).Error; err != nil {
+			log.Printf("❌ Failed to register user: %v", err)
+			http.Error(w, "Failed to register user", http.StatusInternalServerError)
+			return
+		}
+		log.Printf("✅ New user registered: %s", email)
+	} else if err != nil {
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	} else {
+		// Update user info if user already exists
+		updates := models.User{
+			Name:    name,
+			Picture: picture,
+		}
+		if err := db.Model(&user).Updates(updates).Error; err != nil {
+			http.Error(w, "Failed to update user info", http.StatusInternalServerError)
+			return
+		}
+		log.Printf("✅ Existing user updated: %s", email)
 	}
 
-	// If user not found, create a new user
-	if !errors.Is(result.Error, gorm.ErrRecordNotFound) {
-		return nil, result.Error
-	}
-
-	// Create a new user in the database
-	user = models.User{
-		ID:       info.Sub,
-		Email:    info.Email,
-		Name:     info.Name,
-		Picture:  info.Picture,
-		Provider: "google",
-	}
-	if err := db.Create(&user).Error; err != nil {
-		return nil, err
-	}
-
-	log.Printf("✅ New user created: %s\n", user.Email)
-	return &user, nil
-}
-
-// --- JWT Generation ---
-func GenerateJWT(userID string, email string) (string, error) {
-	secret := os.Getenv("JWT_SECRET")
-	if secret == "" {
-		return "", errors.New("missing JWT_SECRET in environment variables")
-	}
-
-	claims := jwt.MapClaims{
-		"user_id": userID,
-		"email":   email,
-		"exp":     time.Now().Add(24 * time.Hour).Unix(),
-	}
-
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString([]byte(secret))
+	// Issue a JWT token and respond
+	issueTokenAndRespond(w, email, "user", firebaseUserID, name, picture)
 }
