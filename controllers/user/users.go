@@ -1,10 +1,10 @@
 package userControllers
 
 import (
-	"net/http"
 	"github.com/gin-gonic/gin"
 	"github.com/junaidrashid-git/ecommerce-api/models"
 	"gorm.io/gorm"
+	"net/http"
 )
 
 type UpdateUserInput struct {
@@ -91,7 +91,6 @@ func UpdateUser(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
-
 // GetAllCategoriesWithProducts returns all categories with their products
 func GetAllCategoriesWithProducts(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -106,6 +105,3 @@ func GetAllCategoriesWithProducts(db *gorm.DB) gin.HandlerFunc {
 		c.JSON(http.StatusOK, categories)
 	}
 }
-
-
-

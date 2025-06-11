@@ -1,12 +1,11 @@
 package cartControllers
 
 import (
-	"net/http"
-	"time"
-
 	"github.com/gin-gonic/gin"
 	"github.com/junaidrashid-git/ecommerce-api/models"
 	"gorm.io/gorm"
+	"net/http"
+	"time"
 )
 
 type CartItemInput struct {
@@ -30,6 +29,7 @@ func UpdateCartItem(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
+		// Fetch product from DB
 		var product models.Product
 		if err := db.First(&product, "id = ?", input.ProductID).Error; err != nil {
 			status := http.StatusInternalServerError
@@ -42,10 +42,15 @@ func UpdateCartItem(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
+		// Check if user has a cart
 		var cart models.Cart
 		if err := db.Where("user_id = ?", userID).First(&cart).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
-				cart = models.Cart{UserID: userID, CreatedAt: time.Now(), UpdatedAt: time.Now()}
+				cart = models.Cart{
+					UserID:    userID,
+					CreatedAt: time.Now(),
+					UpdatedAt: time.Now(),
+				}
 				if err := db.Create(&cart).Error; err != nil {
 					c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user cart"})
 					return
@@ -56,15 +61,23 @@ func UpdateCartItem(db *gorm.DB) gin.HandlerFunc {
 			}
 		}
 
+		// Check if item already exists in the cart
 		var item models.CartItem
 		err := db.Where("cart_id = ? AND product_id = ?", cart.CartID, input.ProductID).First(&item).Error
 		if err != nil {
+			// New cart item
 			if err == gorm.ErrRecordNotFound {
 				newItem := models.CartItem{
-					CartID:    cart.CartID,
-					ProductID: input.ProductID,
-					Quantity:  input.Quantity,
-					AddedAt:   time.Now(),
+					CartID:              cart.CartID,
+					ProductID:           product.ID,
+					ProductEName:        product.EName,
+					ProductArName:       product.ARName,
+					ProductImage:        product.Image,
+					ProductSalePrice:    product.SalePrice,
+					ProductRegularPrice: product.RegularPrice,
+					Weight:              product.Weight,
+					Quantity:            input.Quantity,
+					AddedAt:             time.Now(),
 				}
 				if err := db.Create(&newItem).Error; err != nil {
 					c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add item to cart"})
@@ -77,6 +90,7 @@ func UpdateCartItem(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
+		// Update existing cart item quantity and time
 		item.Quantity = input.Quantity
 		item.AddedAt = time.Now()
 		if err := db.Save(&item).Error; err != nil {
@@ -91,6 +105,7 @@ func UpdateCartItem(db *gorm.DB) gin.HandlerFunc {
 // DELETE /user/cart/:product_id
 func DeleteCartItem(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// Get user ID from context
 		userIDVal, exists := c.Get("user_id")
 		if !exists {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
@@ -99,15 +114,23 @@ func DeleteCartItem(db *gorm.DB) gin.HandlerFunc {
 		userID := userIDVal.(string)
 		productID := c.Param("product_id")
 
+		// Get the user's cart
 		var cart models.Cart
 		if err := db.Where("user_id = ?", userID).First(&cart).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch user cart"})
+			c.JSON(http.StatusNotFound, gin.H{"error": "User cart not found"})
 			return
 		}
 
-		if err := db.Where("cart_id = ? AND product_id = ?", cart.CartID, productID).
-			Delete(&models.CartItem{}).Error; err != nil {
+		// Attempt to delete the cart item
+		result := db.Where("cart_id = ? AND product_id = ?", cart.CartID, productID).Delete(&models.CartItem{})
+		if result.Error != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete item"})
+			return
+		}
+
+		// Check if item was actually deleted
+		if result.RowsAffected == 0 {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Cart item not found"})
 			return
 		}
 

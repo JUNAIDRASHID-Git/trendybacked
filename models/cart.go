@@ -11,9 +11,15 @@ type Cart struct {
 }
 
 type CartItem struct {
-	ID        uint `gorm:"primaryKey"`
-	CartID    uint `gorm:"index"` // Faster queries
-	ProductID string
-	Quantity  int
-	AddedAt   time.Time
+	ID                  uint `gorm:"primaryKey"`
+	CartID              uint `gorm:"index"` // Faster queries
+	ProductID           uint
+	ProductEName        string // English name of the product
+	ProductArName       string // Arabic name of the product
+	ProductImage        string
+	ProductSalePrice    float64
+	ProductRegularPrice float64
+	Weight              float64
+	Quantity            int
+	AddedAt             time.Time
 }
