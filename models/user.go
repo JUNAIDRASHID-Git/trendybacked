@@ -16,9 +16,9 @@ type User struct {
 
 // Address model embedded in User
 type Address struct {
-	Street     string
-	City       string
-	State      string
-	PostalCode string
 	Country    string
+	State      string
+	City       string
+	Street     string
+	PostalCode string
 }

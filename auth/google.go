@@ -113,3 +113,27 @@ func GoogleUserLoginHandler(w http.ResponseWriter, r *http.Request, db *gorm.DB)
 	// Issue a JWT token and respond
 	issueTokenAndRespond(w, email, "user", firebaseUserID, name, picture)
 }
+
+// func GoogleUserLogoutHandler(w http.ResponseWriter, r *http.Request, db *gorm.DB) {
+// 	var req struct {
+// 		UserID string `json:"userId"`
+// 	}
+
+// 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.UserID == "" {
+// 		http.Error(w, "Invalid request", http.StatusBadRequest)
+// 		return
+// 	}
+
+// 	ctx := context.Background()
+
+// 	err := firebaseAuth.RevokeRefreshTokens(ctx, req.UserID)
+// 	if err != nil {
+// 		log.Printf("❌ Failed to revoke tokens: %v", err)
+// 		http.Error(w, "Failed to revoke user tokens", http.StatusInternalServerError)
+// 		return
+// 	}
+
+// 	log.Printf("✅ Refresh tokens revoked for user: %s", req.UserID)
+// 	w.WriteHeader(http.StatusOK)
+// 	json.NewEncoder(w).Encode(map[string]string{"message": "User logged out"})
+// }

@@ -168,7 +168,7 @@ func generateJWT(email, role, userID string) string {
 		"email":   email,
 		"role":    role,
 		"user_id": userID, // Add user_id here
-		"exp":     time.Now().Add(24 * time.Hour).Unix(),
+		"exp":     time.Now().AddDate(0, 2, 0).Unix(),
 	}
 	t := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	hmac := []byte(os.Getenv("JWT_SECRET"))

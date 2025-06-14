@@ -19,5 +19,8 @@ func SetupAuthRoutes(r *gin.Engine, db *gorm.DB) {
 		authGroup.POST("/google-admin", func(c *gin.Context) {
 			auth.GoogleAdminLoginHandler(c.Writer, c.Request, db)
 		})
+		// authGroup.POST("/google-user/logout", func(c *gin.Context) {
+		// 	auth.GoogleUserLogoutHandler(c.Writer, c.Request, db)
+		// })
 	}
 }
