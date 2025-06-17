@@ -44,5 +44,11 @@ func SetupAdminRoutes(r *gin.Engine, db *gorm.DB) {
 			adminMgmt.POST("/approve", adminController.ApproveAdmin(db))
 			adminMgmt.POST("/reject", adminController.RejectAdmin(db))
 		}
+
+		bannerMgmt := adminGroup.Group("/banner")
+		{
+			bannerMgmt.POST("/upload", adminController.UploadBanner(db))
+			bannerMgmt.GET("/", adminController.GetBanners(db))
+		}
 	}
 }

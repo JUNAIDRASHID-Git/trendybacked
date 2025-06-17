@@ -40,7 +40,7 @@ func main() {
 	log.Println("✅ Database connected successfully.")
 
 	// Auto-migrate tables
-	if err := db.AutoMigrate(&models.User{}, &models.Product{}, &models.Category{}, &models.Admin{}, &models.Cart{}, &models.CartItem{}, &models.Order{}, &models.OrderItem{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.Product{}, &models.Category{}, &models.Admin{}, &models.Cart{}, &models.CartItem{}, &models.Order{}, &models.OrderItem{}, &models.Banner{}); err != nil {
 		log.Fatalf("❌ AutoMigrate failed: %v", err)
 	}
 	log.Println("✅ Database tables migrated successfully.")
