@@ -15,4 +15,7 @@ func SetupRoutes(r *gin.Engine, db *gorm.DB) {
 
 	// 3️⃣ Admin routes (API‐Key‐protected)
 	SetupAdminRoutes(r, db)
+
+	// order routes
+	SetupOrderRoutes(r, db)
 }
