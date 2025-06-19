@@ -2,6 +2,8 @@ package adminController
 
 import (
 	"net/http"
+	"strings"
+
 	"github.com/gin-gonic/gin"
 	"github.com/junaidrashid-git/ecommerce-api/models"
 	"github.com/junaidrashid-git/ecommerce-api/utils"
@@ -44,3 +46,55 @@ func GetBanners(db *gorm.DB) gin.HandlerFunc {
 		c.JSON(http.StatusOK, banners)
 	}
 }
+
+func DeleteBanner(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Get banner ID from path
+		id := c.Param("id")
+		var banner models.Banner
+
+		// Find banner
+		if err := db.First(&banner, id).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				c.JSON(http.StatusNotFound, gin.H{"error": "Banner not found"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
+			return
+		}
+
+		// Extract public ID from Cloudinary URL (assuming URL format)
+		publicID := extractCloudinaryPublicID(banner.ImageURL)
+		if publicID == "" {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid Cloudinary URL"})
+			return
+		}
+
+		// Delete image from Cloudinary
+		if err := utils.DeleteImage(publicID); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Cloudinary delete failed", "details": err.Error()})
+			return
+		}
+
+		// Delete record from database
+		if err := db.Delete(&banner).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete from database"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"message": "Banner deleted"})
+	}
+}
+
+
+func extractCloudinaryPublicID(imageURL string) string {
+	parts := strings.Split(imageURL, "/")
+	if len(parts) < 2 {
+		return ""
+	}
+	file := parts[len(parts)-1]
+	folder := parts[len(parts)-2]
+	publicID := folder + "/" + strings.TrimSuffix(file, ".jpg") // or .png or .webp
+	return publicID
+}
+

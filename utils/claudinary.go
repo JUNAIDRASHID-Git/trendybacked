@@ -1,9 +1,12 @@
 package utils
 
 import (
-	"github.com/cloudinary/cloudinary-go/v2"
+	"context"
+	"fmt"
 	"log"
 	"os"
+	"github.com/cloudinary/cloudinary-go/v2/api/uploader"
+	"github.com/cloudinary/cloudinary-go/v2"
 )
 
 func InitCloudinary() *cloudinary.Cloudinary {
@@ -17,4 +20,27 @@ func InitCloudinary() *cloudinary.Cloudinary {
 	}
 
 	return cld
+}
+
+
+func DeleteImage(publicID string) error {
+	// Initialize Cloudinary client
+	cld, err := cloudinary.NewFromParams(
+		os.Getenv("CLOUDINARY_CLOUD_NAME"),
+		os.Getenv("CLOUDINARY_API_KEY"),
+		os.Getenv("CLOUDINARY_API_SECRET"),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create Cloudinary client: %w", err)
+	}
+
+	// Delete the image using its public ID
+	_, err = cld.Upload.Destroy(context.Background(), uploader.DestroyParams{
+		PublicID: publicID,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to delete image from Cloudinary: %w", err)
+	}
+
+	return nil
 }

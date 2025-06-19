@@ -49,6 +49,7 @@ func SetupAdminRoutes(r *gin.Engine, db *gorm.DB) {
 		{
 			bannerMgmt.POST("/upload", adminController.UploadBanner(db))
 			bannerMgmt.GET("/", adminController.GetBanners(db))
+			bannerMgmt.DELETE("/", adminController.DeleteBanner(db))
 		}
 	}
 }
