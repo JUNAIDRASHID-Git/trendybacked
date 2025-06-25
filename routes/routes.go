@@ -18,4 +18,6 @@ func SetupRoutes(r *gin.Engine, db *gorm.DB) {
 
 	// order routes
 	SetupOrderRoutes(r, db)
+
+	SetupPaymentRoutes(r)
 }
