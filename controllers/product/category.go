@@ -3,47 +3,44 @@ package productcontroller
 import (
 	"net/http"
 	"strings"
+
 	"github.com/gin-gonic/gin"
 	"github.com/junaidrashid-git/ecommerce-api/models"
 	"gorm.io/gorm"
 )
 
-// CreateCategory creates a new category. JSON body: { "name": "Category Name" }.
-// Returns 201 + created category, or appropriate error.
+// CreateCategory creates a new category.
 func CreateCategory(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// 1️⃣ Bind input
 		var input struct {
-			Name string `json:"name" binding:"required"`
+			EName  string `json:"ename" binding:"required"`
+			ARName string `json:"arname" binding:"required"`
 		}
 		if err := c.ShouldBindJSON(&input); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Name is required"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "English and Arabic names are required"})
 			return
 		}
 
-		// 2️⃣ Initialize category (no Products yet)
 		newCategory := models.Category{
-			Name:     input.Name,
+			EName:    input.EName,
+			ARName:   input.ARName,
 			Products: []models.Product{},
 		}
 
-		// 3️⃣ Save to DB
 		if err := db.Create(&newCategory).Error; err != nil {
-			// Check for unique constraint violation (duplicate name)
 			if strings.Contains(err.Error(), "unique") {
 				c.JSON(http.StatusConflict, gin.H{"error": "Category already exists"})
-				return
+			} else {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create category"})
 			}
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create category"})
 			return
 		}
 
-		// 4️⃣ Return created category
 		c.JSON(http.StatusCreated, newCategory)
 	}
 }
 
-// GetAllCategories returns all categories (no pagination).
+// GetAllCategories returns all categories.
 func GetAllCategories(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var categories []models.Category
@@ -59,30 +56,27 @@ func GetAllCategories(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
-// UpdateCategory updates only the Name of an existing category. JSON body: { "name": "New Name" }.
-// Returns 200 + updated category, or 404/400/500 appropriately.
+// UpdateCategory updates an existing category.
 func UpdateCategory(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// 1️⃣ Parse category ID from URL
 		id := c.Param("id")
 		if id == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Category ID is required"})
 			return
 		}
 
-		// 2️⃣ Bind input
 		var input struct {
-			Name string `json:"name" binding:"required"`
+			EName  string `json:"ename" binding:"required"`
+			ARName string `json:"arname" binding:"required"`
 		}
 		if err := c.ShouldBindJSON(&input); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Name is required"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Both English and Arabic names are required"})
 			return
 		}
 
-		// 3️⃣ Try updating
 		result := db.Model(&models.Category{}).
 			Where("id = ?", id).
-			Updates(models.Category{Name: input.Name})
+			Updates(models.Category{EName: input.EName, ARName: input.ARName})
 
 		if result.Error != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update category"})
@@ -93,7 +87,6 @@ func UpdateCategory(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		// 4️⃣ Fetch updated category
 		var updated models.Category
 		if err := db.First(&updated, id).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch updated category"})
@@ -104,48 +97,46 @@ func UpdateCategory(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
-// DeleteCategory removes a category by ID.
-// It also clears any product-category associations (join table entries), then deletes.
+// DeleteCategory deletes a category and clears product associations.
 func DeleteCategory(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// 1️⃣ Parse category ID
 		id := c.Param("id")
 		if id == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Category ID is required"})
 			return
 		}
 
-		// 2️⃣ Fetch the category (to clear associations)
 		var cat models.Category
 		if err := db.Preload("Products").First(&cat, id).Error; err != nil {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Category not found"})
 			return
 		}
 
-		// 3️⃣ Start a transaction: clear associations, then delete
 		tx := db.Begin()
 		if tx.Error != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to start transaction"})
 			return
 		}
+		defer func() {
+			if r := recover(); r != nil {
+				tx.Rollback()
+			}
+		}()
 
-		// 4️⃣ Clear association in join table
 		if err := tx.Model(&cat).Association("Products").Clear(); err != nil {
 			tx.Rollback()
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to clear category-product associations"})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to clear product associations"})
 			return
 		}
 
-		// 5️⃣ Delete the category itself
 		if err := tx.Delete(&cat).Error; err != nil {
 			tx.Rollback()
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete category"})
 			return
 		}
 
-		// 6️⃣ Commit
 		if err := tx.Commit().Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to commit deletion"})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to commit transaction"})
 			return
 		}
 

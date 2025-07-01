@@ -26,6 +26,8 @@ func SetupAdminRoutes(r *gin.Engine, db *gorm.DB) {
 			productAdmin.GET("", productcontroller.GetProducts(db))
 			productAdmin.DELETE("/:id", productcontroller.DeleteProduct(db))
 			productAdmin.POST("/import-excel", productcontroller.ImportProductsFromExcel(db))
+			productAdmin.GET("/export-excel", productcontroller.ExportProductsToExcel(db))
+
 		}
 
 		// ─────────── Category Management ───────────
