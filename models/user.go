@@ -10,7 +10,7 @@ type User struct {
 	Picture   string
 	Provider  string
 	Address   Address `gorm:"embedded"`          // Embeds address fields directly
-	CartItems []Cart  `gorm:"foreignKey:UserID"` // One-to-many relationship
+	Cart      Cart    `gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE" json:"cart"`
 	Orders    []Order `gorm:"foreignKey:UserID;constraint:OnDelete:SET NULL" json:"orders"`
 	CreatedAt time.Time
 }

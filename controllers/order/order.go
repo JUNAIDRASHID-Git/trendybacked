@@ -6,10 +6,10 @@ import (
 	"net/http"
 	"strings"
 	"time"
-
 	"github.com/gin-gonic/gin"
 	"github.com/junaidrashid-git/ecommerce-api/models"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // Struct to receive client request
@@ -80,44 +80,63 @@ func PlaceOrder(db *gorm.DB, req PlaceOrderRequest) error {
 	var total, totalWeight float64
 	var orderItems []models.OrderItem
 
-	for _, item := range cart.Items {
-		total += item.ProductSalePrice * float64(item.Quantity)
-		totalWeight += item.Weight * float64(item.Quantity)
-		orderItems = append(orderItems, models.OrderItem{
-			ProductID:           item.ProductID,
-			ProductEName:        item.ProductEName,
-			ProductArName:       item.ProductArName,
-			ProductImage:        item.ProductImage,
-			ProductSalePrice:    item.ProductSalePrice,
-			ProductRegularPrice: item.ProductRegularPrice,
-			Weight:              item.Weight,
-			Quantity:            item.Quantity,
-		})
-	}
-
-	shippingCost := 0.0
-	if totalWeight > 0 {
-		shippingCost = float64(int(math.Ceil(totalWeight/30.0))) * 30.0
-	}
-	totalWithShipping := total + shippingCost
-
-	order := models.Order{
-		UserID:        req.UserID,
-		Items:         orderItems,
-		TotalAmount:   totalWithShipping,
-		ShippingCost:  shippingCost,
-		Status:        mappedOrderStatus,
-		PaymentStatus: mappedPaymentStatus,
-		CreatedAt:     time.Now(),
-	}
-
+	// Transaction block
 	return db.Transaction(func(tx *gorm.DB) error {
+		for _, item := range cart.Items {
+			var product models.Product
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&product, "id = ?", item.ProductID).Error; err != nil {
+				return err
+			}
+
+			if product.Stock < item.Quantity {
+				return errors.New("insufficient stock for product: " + product.EName)
+			}
+
+			// Deduct stock
+			product.Stock -= item.Quantity
+			if err := tx.Save(&product).Error; err != nil {
+				return err
+			}
+
+			// Accumulate totals and order items
+			total += item.ProductSalePrice * float64(item.Quantity)
+			totalWeight += item.Weight * float64(item.Quantity)
+			orderItems = append(orderItems, models.OrderItem{
+				ProductID:           item.ProductID,
+				ProductEName:        item.ProductEName,
+				ProductArName:       item.ProductArName,
+				ProductImage:        item.ProductImage,
+				ProductSalePrice:    item.ProductSalePrice,
+				ProductRegularPrice: item.ProductRegularPrice,
+				Weight:              item.Weight,
+				Quantity:            item.Quantity,
+			})
+		}
+
+		shippingCost := 0.0
+		if totalWeight > 0 {
+			shippingCost = float64(int(math.Ceil(totalWeight/30.0))) * 30.0
+		}
+		totalWithShipping := total + shippingCost
+
+		order := models.Order{
+			UserID:        req.UserID,
+			Items:         orderItems,
+			TotalAmount:   totalWithShipping,
+			ShippingCost:  shippingCost,
+			Status:        mappedOrderStatus,
+			PaymentStatus: mappedPaymentStatus,
+			CreatedAt:     time.Now(),
+		}
+
 		if err := tx.Create(&order).Error; err != nil {
 			return err
 		}
+
 		if err := tx.Where("cart_id = ?", cart.CartID).Delete(&models.CartItem{}).Error; err != nil {
 			return err
 		}
+
 		return nil
 	})
 }

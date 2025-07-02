@@ -1,11 +1,12 @@
 package cartControllers
 
 import (
+	"net/http"
+	"time"
+
 	"github.com/gin-gonic/gin"
 	"github.com/junaidrashid-git/ecommerce-api/models"
 	"gorm.io/gorm"
-	"net/http"
-	"time"
 )
 
 type CartItemInput struct {
@@ -45,20 +46,8 @@ func UpdateCartItem(db *gorm.DB) gin.HandlerFunc {
 		// Check if user has a cart
 		var cart models.Cart
 		if err := db.Where("user_id = ?", userID).First(&cart).Error; err != nil {
-			if err == gorm.ErrRecordNotFound {
-				cart = models.Cart{
-					UserID:    userID,
-					CreatedAt: time.Now(),
-					UpdatedAt: time.Now(),
-				}
-				if err := db.Create(&cart).Error; err != nil {
-					c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user cart"})
-					return
-				}
-			} else {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch user cart"})
-				return
-			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "User cart not found"})
+			return
 		}
 
 		// Check if item already exists in the cart
@@ -73,6 +62,7 @@ func UpdateCartItem(db *gorm.DB) gin.HandlerFunc {
 					ProductEName:        product.EName,
 					ProductArName:       product.ARName,
 					ProductImage:        product.Image,
+					ProductStock:        product.Stock,
 					ProductSalePrice:    product.SalePrice,
 					ProductRegularPrice: product.RegularPrice,
 					Weight:              product.Weight,

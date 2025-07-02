@@ -1,10 +1,11 @@
 package userControllers
 
 import (
+	"net/http"
+
 	"github.com/gin-gonic/gin"
 	"github.com/junaidrashid-git/ecommerce-api/models"
 	"gorm.io/gorm"
-	"net/http"
 )
 
 type UpdateUserInput struct {
@@ -20,7 +21,7 @@ func GetUser(db *gorm.DB) gin.HandlerFunc {
 		userID, _ := c.Get("user_id")
 		var user models.User
 
-		if err := db.Preload("CartItems").First(&user, "id = ?", userID).Error; err != nil {
+		if err := db.Preload("Cart.Items").Preload("Orders").First(&user, "id = ?", userID).Error; err != nil {
 			c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
 			return
 		}

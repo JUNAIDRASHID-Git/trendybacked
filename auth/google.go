@@ -3,13 +3,14 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"log"
+	"net/http"
+	"os"
+
 	firebase "firebase.google.com/go"
 	"github.com/junaidrashid-git/ecommerce-api/models"
 	"google.golang.org/api/option"
 	"gorm.io/gorm"
-	"log"
-	"net/http"
-	"os"
 )
 
 // InitFirebase initializes Firebase app and auth client
@@ -77,7 +78,7 @@ func GoogleUserLoginHandler(w http.ResponseWriter, r *http.Request, db *gorm.DB)
 	firebaseUserID := token.UID
 
 	var user models.User
-	err = db.Where("email = ?", email).First(&user).Error
+	err = db.First(&user, "id = ?", firebaseUserID).Error
 	if err == gorm.ErrRecordNotFound {
 		user = models.User{
 			ID:       firebaseUserID,
@@ -85,6 +86,7 @@ func GoogleUserLoginHandler(w http.ResponseWriter, r *http.Request, db *gorm.DB)
 			Name:     name,
 			Picture:  picture,
 			Provider: "google",
+			Cart:     models.Cart{UserID: firebaseUserID},
 		}
 
 		// ✅ FIX: removed .Omit("ID")

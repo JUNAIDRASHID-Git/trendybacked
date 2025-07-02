@@ -88,7 +88,7 @@ func ImportProductsFromExcel(db *gorm.DB) gin.HandlerFunc {
 				RegularPrice:  regularPrice,
 				BaseCost:      baseCost,
 				Weight:        weight,
-				Stock:         stock,
+				Stock:         int(stock),
 				Image:         image,
 				Categories:    categories,
 			}
@@ -138,4 +138,3 @@ func ImportProductsFromExcel(db *gorm.DB) gin.HandlerFunc {
 		})
 	}
 }
-

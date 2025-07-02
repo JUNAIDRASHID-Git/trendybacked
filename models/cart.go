@@ -17,6 +17,7 @@ type CartItem struct {
 	ProductEName        string // English name of the product
 	ProductArName       string // Arabic name of the product
 	ProductImage        string
+	ProductStock        int
 	ProductSalePrice    float64
 	ProductRegularPrice float64
 	Weight              float64
