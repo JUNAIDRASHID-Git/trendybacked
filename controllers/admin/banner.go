@@ -86,15 +86,27 @@ func DeleteBanner(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
-
 func extractCloudinaryPublicID(imageURL string) string {
-	parts := strings.Split(imageURL, "/")
-	if len(parts) < 2 {
+	// Find the "/upload/" part, Cloudinary always includes it
+	uploadIndex := strings.Index(imageURL, "/upload/")
+	if uploadIndex == -1 {
 		return ""
 	}
-	file := parts[len(parts)-1]
-	folder := parts[len(parts)-2]
-	publicID := folder + "/" + strings.TrimSuffix(file, ".jpg") // or .png or .webp
+
+	// Get the path after "/upload/"
+	path := imageURL[uploadIndex+len("/upload/"):]
+
+	// Remove version info like v1234567890/
+	pathParts := strings.SplitN(path, "/", 2)
+	if len(pathParts) < 2 {
+		return ""
+	}
+
+	publicPath := pathParts[1]
+	publicID := strings.TrimSuffix(publicPath, ".jpg")
+	publicID = strings.TrimSuffix(publicID, ".png")
+	publicID = strings.TrimSuffix(publicID, ".webp")
+	publicID = strings.TrimSuffix(publicID, ".jpeg")
+
 	return publicID
 }
-
