@@ -55,7 +55,7 @@ func InitTapPaymentHandler() gin.HandlerFunc {
 				"url": "http://localhost:8080/api/payment/webhook", // Change this to your live endpoint
 			},
 			"redirect": map[string]interface{}{
-				"url": "https://trendy-chef-678.web.app//#/payment-success",
+				"url": "https://trendy-chef-678.web.app/#/payment-redirect",
 			},
 			"metadata": map[string]interface{}{
 				"user_id": req.UserID,
