@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
 	"github.com/gin-gonic/gin"
 	"github.com/junaidrashid-git/ecommerce-api/models"
 	"gorm.io/gorm"
@@ -115,7 +116,7 @@ func PlaceOrder(db *gorm.DB, req PlaceOrderRequest) error {
 
 		shippingCost := 0.0
 		if totalWeight > 0 {
-			shippingCost = float64(int(math.Ceil(totalWeight/30.0))) * 30.0
+			shippingCost = float64(int(math.Ceil((totalWeight-1)/30.0))) * 30.0
 		}
 		totalWithShipping := total + shippingCost
 
@@ -137,6 +138,7 @@ func PlaceOrder(db *gorm.DB, req PlaceOrderRequest) error {
 			return err
 		}
 
+		go broadcastNewOrder(order)
 		return nil
 	})
 }

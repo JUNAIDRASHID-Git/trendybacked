@@ -15,6 +15,9 @@ func SetupOrderRoutes(r *gin.Engine, db *gorm.DB) {
 		// Fetch all orders (admin)
 		orders.GET("/", orderControllers.GetAllOrdersHandler(db))
 
+		// websocket endpoint for real-time order updates
+		orders.GET("/ws/orders", orderControllers.OrderWebSocketHandler)
+
 		// Fetch orders for a specific user
 		orders.GET("/user/:userID", orderControllers.GetUserOrdersHandler(db))
 
