@@ -29,6 +29,7 @@ func SetupUserRoutes(r *gin.Engine, db *gorm.DB) {
 
 		// ──────────────── Browse Products ────────────────
 		userGroup.GET("/products", productControllers.GetProducts(db)) // GET /user/products
+		userGroup.GET("/products/:id", productControllers.GetProductByID(db)) // GET /user/products
 
 		// ──────────────── Browse Categories + Products ────────────────
 		userGroup.GET("/categories", userControllers.GetAllCategoriesWithProducts(db)) // GET /user/categories
