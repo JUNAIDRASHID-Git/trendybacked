@@ -2,9 +2,10 @@ package routes
 
 import (
 	"github.com/gin-gonic/gin"
-	"github.com/junaidrashid-git/ecommerce-api/controllers/admin"
-	"github.com/junaidrashid-git/ecommerce-api/controllers/product"
-	"github.com/junaidrashid-git/ecommerce-api/controllers/user"
+	adminController "github.com/junaidrashid-git/ecommerce-api/controllers/admin"
+	cartControllers "github.com/junaidrashid-git/ecommerce-api/controllers/cart"
+	productcontroller "github.com/junaidrashid-git/ecommerce-api/controllers/product"
+	userControllers "github.com/junaidrashid-git/ecommerce-api/controllers/user"
 	"github.com/junaidrashid-git/ecommerce-api/middleware"
 	"gorm.io/gorm"
 )
@@ -52,6 +53,10 @@ func SetupAdminRoutes(r *gin.Engine, db *gorm.DB) {
 			bannerMgmt.POST("/upload", adminController.UploadBanner(db))
 			bannerMgmt.GET("/", adminController.GetBanners(db))
 			bannerMgmt.DELETE("/", adminController.DeleteBanner(db))
+		}
+		cartMgmt := adminGroup.Group("/user-cart")
+		{
+			cartMgmt.GET("/:user_id", cartControllers.GetUserCart(db))
 		}
 	}
 }
