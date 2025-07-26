@@ -56,7 +56,7 @@ func SetupAdminRoutes(r *gin.Engine, db *gorm.DB) {
 		}
 		cartMgmt := adminGroup.Group("/user-cart")
 		{
-			cartMgmt.GET("/:user_id", cartControllers.GetUserCart(db))
+			cartMgmt.GET("/:user_id", cartControllers.GetAdminUserCart(db))
 		}
 	}
 }

@@ -155,6 +155,26 @@ func ClearUserCart(db *gorm.DB) gin.HandlerFunc {
 // GET /user/cart
 func GetUserCart(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		userIDVal, exists := c.Get("user_id")
+		if !exists {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+			return
+		}
+		userID := userIDVal.(string)
+
+		var cart models.Cart
+		if err := db.Preload("Items").Where("user_id = ?", userID).First(&cart).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch cart"})
+			return
+		}
+
+		c.JSON(http.StatusOK, cart.Items)
+	}
+}
+
+// GET /user/cart
+func GetAdminUserCart(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
 		userID := c.Param("user_id")
 
 		if userID == "" {
