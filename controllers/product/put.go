@@ -8,11 +8,12 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/cloudinary/cloudinary-go/v2/api/uploader"
 	"github.com/gin-gonic/gin"
 	"github.com/junaidrashid-git/ecommerce-api/models"
 	"github.com/junaidrashid-git/ecommerce-api/utils"
 	"gorm.io/gorm"
-	"github.com/cloudinary/cloudinary-go/v2/api/uploader"
 )
 
 // UpdateProduct updates an existing product’s fields, categories, and optionally its image.
@@ -47,6 +48,7 @@ func UpdateProduct(db *gorm.DB) gin.HandlerFunc {
 		regularPriceStr := c.PostForm("regular_price")
 		baseCostStr := c.PostForm("base_cost")
 		weightStr := c.PostForm("weight")
+		stockStr := c.PostForm("stock")
 		categoryIDsStr := c.PostForm("category_ids")
 
 		// 4️⃣ Begin transaction for update + associations
@@ -103,6 +105,16 @@ func UpdateProduct(db *gorm.DB) gin.HandlerFunc {
 				return
 			} else {
 				existing.Weight = w
+			}
+		}
+
+		if stockStr != "" {
+			if stock, err := strconv.Atoi(stockStr); err != nil {
+				tx.Rollback()
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid stock format"})
+				return
+			} else {
+				existing.Stock = stock
 			}
 		}
 
