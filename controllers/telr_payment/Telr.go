@@ -1,4 +1,4 @@
-package paymentTelrControllers
+package paymentControllers
 
 import (
 	"encoding/json"
