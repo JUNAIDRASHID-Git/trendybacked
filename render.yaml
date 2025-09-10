@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: ecommerce-api
+    env: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: PORT
+        value: "8080"
+      - key: DB_HOST
+        value: your-db-host
+      - key: DB_PORT
+        value: "5432"
+      - key: DB_USER
+        value: your-db-user
+      - key: DB_PASSWORD
+        value: your-db-password
+      - key: DB_NAME
+        value: your-db-name
+      - key: FIREBASE_PROJECT_ID
+        value: your-firebase-project-id
+      - key: SUPER_ADMIN_EMAIL
+        value: your-super-admin@example.com
+      - key: JWT_SECRET
+        value: your-strong-jwt-secret
+      - key: FIREBASE_CREDENTIALS_JSON
+        sync: false  # Will be filled in Render Dashboard
