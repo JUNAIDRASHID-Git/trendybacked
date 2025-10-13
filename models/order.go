@@ -31,8 +31,7 @@ type Order struct {
 	TotalAmount   float64       `json:"total_amount"`
 	Status        OrderStatus   `gorm:"type:VARCHAR(20);default:'pending'" json:"status"`
 	PaymentStatus PaymentStatus `gorm:"type:VARCHAR(20);default:'pending'" json:"payment_status"`
-	PaymentMethod string        `json:"payment_method"`
-	OrderRef      string        `gorm:"type:varchar(255);uniqueIndex" json:"order_ref"` // <-- new field
+	PaymentMethod string        `json:"payment_method"` // e.g. "card", "cod"
 	CreatedAt     time.Time     `json:"created_at"`
 }
 

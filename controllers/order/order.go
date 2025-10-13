@@ -8,30 +8,19 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/junaidrashid-git/ecommerce-api/models"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
-// -------- Request Structs --------
+// Struct to receive client request
 type PlaceOrderRequest struct {
-	UserID        string `json:"user_id" binding:"required"`
+	CartID        string `json:"cart_id" binding:"required"`
 	Status        string `json:"status" binding:"required"`         // e.g. "pending", "shipped"
 	PaymentStatus string `json:"payment_status" binding:"required"` // e.g. "paid", "failed"
 }
 
-type UpdateOrderStatusRequest struct {
-	Status string `json:"status" binding:"required"`
-}
-
-type UpdatePaymentStatusRequest struct {
-	PaymentStatus string `json:"payment_status" binding:"required"`
-}
-
-// -------- Helpers --------
-
-// Map string to OrderStatus
+// Utility: map and validate status
 func mapOrderStatus(status string) (models.OrderStatus, error) {
 	switch strings.ToLower(status) {
 	case string(models.OrderStatusPending):
@@ -53,7 +42,7 @@ func mapOrderStatus(status string) (models.OrderStatus, error) {
 	}
 }
 
-// Map string to PaymentStatus
+// Utility: map and validate payment status
 func mapPaymentStatus(status string) (models.PaymentStatus, error) {
 	switch strings.ToLower(status) {
 	case string(models.PaymentStatusPending):
@@ -69,60 +58,42 @@ func mapPaymentStatus(status string) (models.PaymentStatus, error) {
 	}
 }
 
-// Generate unique order reference
-func generateOrderRef(userID string) string {
-	// Example: 20250908130500-<uuid4>
-	return time.Now().Format("20060102150405") + "-" + uuid.NewString()
-}
-
-// -------- Core Logic --------
-
-// PlaceOrder creates a new order for a user
-func PlaceOrder(db *gorm.DB, req PlaceOrderRequest) error {
+// Place order from a given CartID (used for webhook or API)
+func PlaceOrder(db *gorm.DB, cartID, status, paymentStatus string) error {
 	var cart models.Cart
-	if err := db.Preload("Items").Where("user_id = ?", req.UserID).First(&cart).Error; err != nil {
-		return err
+	err := db.Preload("Items").Where("cart_id = ?", cartID).First(&cart).Error
+	if err != nil {
+		return errors.New("cart not found for cartID: " + cartID)
 	}
 	if len(cart.Items) == 0 {
 		return errors.New("cart is empty")
 	}
 
-	orderStatus, err := mapOrderStatus(req.Status)
-	if err != nil {
-		return err
-	}
-	paymentStatus, err := mapPaymentStatus(req.PaymentStatus)
-	if err != nil {
-		return err
-	}
+	mappedOrderStatus, _ := mapOrderStatus(status)
+	mappedPaymentStatus, _ := mapPaymentStatus(paymentStatus)
 
 	var total, totalWeight float64
 	var orderItems []models.OrderItem
 
 	return db.Transaction(func(tx *gorm.DB) error {
-		// Process cart items
 		for _, item := range cart.Items {
 			var product models.Product
-			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-				First(&product, "id = ?", item.ProductID).Error; err != nil {
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&product, "id = ?", item.ProductID).Error; err != nil {
 				return err
 			}
 
 			if product.Stock < item.Quantity {
-				return errors.New("insufficient stock for product: " + item.ProductEName)
+				return errors.New("insufficient stock for product: " + product.EName)
 			}
 
-			// Deduct stock
 			product.Stock -= item.Quantity
 			if err := tx.Save(&product).Error; err != nil {
 				return err
 			}
 
-			// Accumulate totals
 			total += item.ProductSalePrice * float64(item.Quantity)
 			totalWeight += item.Weight * float64(item.Quantity)
 
-			// Append to order items
 			orderItems = append(orderItems, models.OrderItem{
 				ProductID:           item.ProductID,
 				ProductEName:        item.ProductEName,
@@ -135,21 +106,30 @@ func PlaceOrder(db *gorm.DB, req PlaceOrderRequest) error {
 			})
 		}
 
-		// Shipping calculation
-		shippingCost := 0.0
-		if totalWeight > 0 {
-			shippingCost = float64(int(math.Ceil((totalWeight-1)/30.0))) * 30.0
+		// === Shipping cost pattern (same as your Flutter logic) ===
+		var shippingCost float64
+		if totalWeight <= 0 {
+			shippingCost = 0.0
+		} else if totalWeight <= 29 {
+			shippingCost = 30.0
+		} else if totalWeight <= 59 {
+			shippingCost = 60.0
+		} else if totalWeight <= 89 {
+			shippingCost = 90.0
+		} else {
+			extraBlocks := int(math.Ceil((totalWeight - 89) / 30.0))
+			shippingCost = 90.0 + float64(extraBlocks*30)
 		}
 
-		// Create order
+		totalWithShipping := total + shippingCost
+
 		order := models.Order{
-			UserID:        req.UserID,
+			UserID:        cart.UserID,
 			Items:         orderItems,
-			TotalAmount:   total + shippingCost,
+			TotalAmount:   totalWithShipping,
 			ShippingCost:  shippingCost,
-			Status:        orderStatus,
-			PaymentStatus: paymentStatus,
-			OrderRef:      generateOrderRef(req.UserID), // ✅ unique ref
+			Status:        mappedOrderStatus,
+			PaymentStatus: mappedPaymentStatus,
 			CreatedAt:     time.Now(),
 		}
 
@@ -157,18 +137,16 @@ func PlaceOrder(db *gorm.DB, req PlaceOrderRequest) error {
 			return err
 		}
 
-		// Clear cart items
 		if err := tx.Where("cart_id = ?", cart.CartID).Delete(&models.CartItem{}).Error; err != nil {
 			return err
 		}
 
+		go BroadcastNewOrder(order)
 		return nil
 	})
 }
 
-// -------- Handlers --------
-
-// Place order (user)
+// HTTP handler to place order
 func PlaceOrderHandler(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req PlaceOrderRequest
@@ -176,25 +154,21 @@ func PlaceOrderHandler(db *gorm.DB) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		if err := PlaceOrder(db, req); err != nil {
+
+		if err := PlaceOrder(db, req.CartID, req.Status, req.PaymentStatus); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
+
 		c.JSON(http.StatusOK, gin.H{"message": "Order placed successfully"})
 	}
 }
 
-// orderControllers (handlers portion)
-
+// Handler for fetching all orders (Admin)
 func GetAllOrdersHandler(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		var orders []models.Order
-		if err := db.
-			Preload("User").
-			Preload("Items").
-			Preload("Items.Product").
-			Order("created_at DESC").
-			Find(&orders).Error; err != nil {
+		orders, err := GetAllOrders(db)
+		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
@@ -202,6 +176,7 @@ func GetAllOrdersHandler(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
+// Handler for fetching a user's orders
 func GetUserOrdersHandler(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID := c.Param("userID")
@@ -209,14 +184,8 @@ func GetUserOrdersHandler(db *gorm.DB) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "userID is required"})
 			return
 		}
-		var orders []models.Order
-		if err := db.
-			Where("user_id = ?", userID).
-			Preload("User").
-			Preload("Items").
-			Preload("Items.Product").
-			Order("created_at DESC").
-			Find(&orders).Error; err != nil {
+		orders, err := GetUserOrders(db, userID)
+		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
@@ -224,36 +193,26 @@ func GetUserOrdersHandler(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
-// New: Get single order by ID or order_ref
-func GetOrderByIDHandler(db *gorm.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		id := c.Param("orderID") // you can pass numeric id or order_ref depending on route
-		if id == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "orderID is required"})
-			return
-		}
-
-		var order models.Order
-		// Try numeric id first; if not numeric, fallback to order_ref lookup
-		if err := db.
-			Preload("User").
-			Preload("Items").
-			Preload("Items.Product").
-			Where("id = ? OR order_ref = ?", id, id).
-			First(&order).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				c.JSON(http.StatusNotFound, gin.H{"error": "order not found"})
-				return
-			}
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-
-		c.JSON(http.StatusOK, order)
-	}
+// Fetch all orders with related user and items
+func GetAllOrders(db *gorm.DB) ([]models.Order, error) {
+	var orders []models.Order
+	err := db.Preload("Items").Preload("User").Order("created_at DESC").Find(&orders).Error
+	return orders, err
 }
 
-// Update order status
+// Fetch user-specific orders
+func GetUserOrders(db *gorm.DB, userID string) ([]models.Order, error) {
+	var orders []models.Order
+	err := db.Where("user_id = ?", userID).Preload("Items").Order("created_at DESC").Find(&orders).Error
+	return orders, err
+}
+
+// Request struct to update order status
+type UpdateOrderStatusRequest struct {
+	Status string `json:"status" binding:"required"` // e.g. "shipped", "cancelled"
+}
+
+// Handler to update order status
 func UpdateOrderStatusHandler(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		orderID := c.Param("orderID")
@@ -261,26 +220,34 @@ func UpdateOrderStatusHandler(db *gorm.DB) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "orderID is required"})
 			return
 		}
+
 		var req UpdateOrderStatusRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
+
 		newStatus, err := mapOrderStatus(req.Status)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		if err := db.Model(&models.Order{}).Where("id = ?", orderID).
-			Update("status", newStatus).Error; err != nil {
+
+		if err := db.Model(&models.Order{}).Where("id = ?", orderID).Update("status", newStatus).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update order status"})
 			return
 		}
+
 		c.JSON(http.StatusOK, gin.H{"message": "Order status updated successfully"})
 	}
 }
 
-// Update payment status
+// Request struct to update payment status
+type UpdatePaymentStatusRequest struct {
+	PaymentStatus string `json:"payment_status" binding:"required"` // e.g. "paid", "failed", "refunded"
+}
+
+// Handler to update the payment status of an order
 func UpdatePaymentStatusHandler(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		orderID := c.Param("orderID")
@@ -288,26 +255,31 @@ func UpdatePaymentStatusHandler(db *gorm.DB) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "orderID is required"})
 			return
 		}
+
 		var req UpdatePaymentStatusRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
+
+		// Validate and map payment status
 		newStatus, err := mapPaymentStatus(req.PaymentStatus)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		if err := db.Model(&models.Order{}).Where("id = ?", orderID).
-			Update("payment_status", newStatus).Error; err != nil {
+
+		// Update payment_status field
+		if err := db.Model(&models.Order{}).Where("id = ?", orderID).Update("payment_status", newStatus).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update payment status"})
 			return
 		}
+
 		c.JSON(http.StatusOK, gin.H{"message": "Payment status updated successfully"})
 	}
 }
 
-// Delete order
+// Handler to delete an order and its items
 func DeleteOrderHandler(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		orderID := c.Param("orderID")
@@ -315,21 +287,25 @@ func DeleteOrderHandler(db *gorm.DB) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "orderID is required"})
 			return
 		}
+
 		err := db.Transaction(func(tx *gorm.DB) error {
-			if err := tx.Where("order_id = ?", orderID).
-				Delete(&models.OrderItem{}).Error; err != nil {
+			// Delete order items first (CASCADE should also handle this, but do it explicitly for safety)
+			if err := tx.Where("order_id = ?", orderID).Delete(&models.OrderItem{}).Error; err != nil {
 				return err
 			}
-			if err := tx.Where("id = ?", orderID).
-				Delete(&models.Order{}).Error; err != nil {
+
+			// Delete order itself
+			if err := tx.Where("id = ?", orderID).Delete(&models.Order{}).Error; err != nil {
 				return err
 			}
 			return nil
 		})
+
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete order"})
 			return
 		}
+
 		c.JSON(http.StatusOK, gin.H{"message": "Order deleted successfully"})
 	}
 }

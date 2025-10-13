@@ -35,6 +35,9 @@ func UploadBanner(db *gorm.DB) gin.HandlerFunc {
 		}
 		defer file.Close()
 
+		// Optional redirect URL from form
+		redirectURL := c.PostForm("url")
+
 		// Ensure upload directory exists
 		if err := os.MkdirAll(uploadDir, os.ModePerm); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create upload folder"})
@@ -43,10 +46,10 @@ func UploadBanner(db *gorm.DB) gin.HandlerFunc {
 
 		// Original filename
 		origName := fileHeader.Filename
-		ext := filepath.Ext(origName)                 // ".jpg"
-		baseName := strings.TrimSuffix(origName, ext) // remove last extension
+		ext := filepath.Ext(origName)
+		baseName := strings.TrimSuffix(origName, ext)
 
-		// Remove duplicate extensions like ".jpg.jpg"
+		// Clean up duplicate extensions and spaces
 		for {
 			e := filepath.Ext(baseName)
 			if e != "" && (e == ".jpg" || e == ".jpeg" || e == ".png" || e == ".gif") {
@@ -55,8 +58,6 @@ func UploadBanner(db *gorm.DB) gin.HandlerFunc {
 				break
 			}
 		}
-
-		// Clean spaces
 		baseName = strings.ReplaceAll(baseName, " ", "_")
 
 		// Final filename
@@ -69,21 +70,27 @@ func UploadBanner(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		// Full URL including domain
+		// Full URL for access
 		imageURL := fmt.Sprintf("%s/uploads/products/%s", domain, newFileName)
 
 		// Save banner in DB
-		banner := models.Banner{ImageURL: imageURL}
+		banner := models.Banner{
+			ImageURL: imageURL,
+			URL:      redirectURL, // optional
+		}
 		if err := db.Create(&banner).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "DB save failed"})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save banner in database"})
 			return
 		}
 
-		c.JSON(http.StatusOK, gin.H{"message": "Banner uploaded", "data": banner})
+		c.JSON(http.StatusOK, gin.H{
+			"message": "Banner uploaded successfully",
+			"data":    banner,
+		})
 	}
 }
 
-// GetBanners - List banners
+// GetBanners - List all banners
 func GetBanners(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var banners []models.Banner
@@ -95,13 +102,16 @@ func GetBanners(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
-// DeleteBanner - Delete both DB record & local file
+// DeleteBanner - Delete both DB record and local file
 func DeleteBanner(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.Param("id")
-		var banner models.Banner
+		if id == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Banner ID required"})
+			return
+		}
 
-		// Find banner in DB
+		var banner models.Banner
 		if err := db.First(&banner, id).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
 				c.JSON(http.StatusNotFound, gin.H{"error": "Banner not found"})
@@ -111,13 +121,16 @@ func DeleteBanner(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		// Delete file from disk
+		// Delete local file if exists
 		if banner.ImageURL != "" {
-			// Convert URL to local path
 			localPath := strings.Replace(banner.ImageURL, domain, "/var/www/trendybacked", 1)
-			if err := os.Remove(localPath); err != nil && !os.IsNotExist(err) {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete file"})
-				return
+			fmt.Println("🗑 Deleting file:", localPath)
+			if err := os.Remove(localPath); err != nil {
+				if os.IsNotExist(err) {
+					fmt.Println("⚠️ File not found, skipping:", localPath)
+				} else {
+					fmt.Println("❌ File delete error:", err)
+				}
 			}
 		}
 
@@ -127,6 +140,6 @@ func DeleteBanner(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		c.JSON(http.StatusOK, gin.H{"message": "Banner deleted"})
+		c.JSON(http.StatusOK, gin.H{"message": "Banner deleted", "id": id})
 	}
 }
