@@ -14,7 +14,7 @@ import (
 )
 
 const uploadDir = "/var/www/trendybacked/uploads/products" // Full path to server folder
-const domain = "https://api.trendy-c.com"                  // Your domain
+const domain = "https://server.trendy-c.com"               // Your domain
 
 // EnsureBannerTable - auto-migrate Banner table
 func EnsureBannerTable(db *gorm.DB) {
