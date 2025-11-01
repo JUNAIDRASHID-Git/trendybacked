@@ -13,13 +13,17 @@ import (
 
 // SetupAdminRoutes registers all “/admin/*” endpoints. Requires API‐Key middleware.
 func SetupAdminRoutes(r *gin.Engine, db *gorm.DB) {
+
+	uploadDir := "/var/www/trendybacked/uploads/qrfiles"
+	publicBaseURL := "https://server.trendy-c.com/uploads"
+
 	adminGroup := r.Group("/admin")
 	adminGroup.Use(middleware.ValidateAPIKey)
 	{
 		// ─────────── Admin & User Management ───────────
 		adminGroup.GET("/admins", adminController.GetAllAdmins(db))
 		adminGroup.GET("/users", userControllers.GetAllUsers(db))
-		adminGroup.POST("/qrupload", qrcontroller.HandleQRFileUpload())
+		adminGroup.POST("/qrupload", qrcontroller.HandleQRFileUpload(uploadDir, publicBaseURL))
 		// ─────────── Product Management ───────────
 		productAdmin := adminGroup.Group("/products")
 		{
