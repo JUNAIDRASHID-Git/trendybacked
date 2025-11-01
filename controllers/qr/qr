@@ -1,0 +1,56 @@
+package qrcontroller
+
+import (
+	"fmt"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/gin-gonic/gin"
+)
+
+func HandleQRFileUpload() gin.HandlerFunc {
+
+	return func(c *gin.Context) {
+		// Get uploaded file
+		file, err := c.FormFile("file")
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "No file uploaded"})
+			return
+		}
+
+		// Sanitize filename
+		filename := fmt.Sprintf("%d_%s", time.Now().Unix(), strings.ReplaceAll(file.Filename, " ", "_"))
+
+		// Save directory
+		saveDir := "/var/www/trendybacked/uploads/qrfiles"
+		if err := os.MkdirAll(saveDir, os.ModePerm); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": fmt.Sprintf("Failed to create upload folder: %v", err),
+			})
+			return
+		}
+
+		// Full path to save
+		savePath := filepath.Join(saveDir, filename)
+
+		// Save the file to disk
+		if err := c.SaveUploadedFile(file, savePath); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": fmt.Sprintf("Failed to save file: %v", err),
+			})
+			return
+		}
+
+		// Public file URL (Nginx or Gin static handler should serve /uploads)
+		fileURL := fmt.Sprintf("/uploads/qrfiles/%s", filename)
+
+		// Respond to Flutter
+		c.JSON(http.StatusOK, gin.H{
+			"file_url": fileURL,
+			"message":  "File uploaded successfully",
+		})
+	}
+}

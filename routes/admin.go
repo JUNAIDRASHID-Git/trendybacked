@@ -5,6 +5,7 @@ import (
 	adminController "github.com/junaidrashid-git/ecommerce-api/controllers/admin"
 	cartControllers "github.com/junaidrashid-git/ecommerce-api/controllers/cart"
 	productcontroller "github.com/junaidrashid-git/ecommerce-api/controllers/product"
+	qrcontroller "github.com/junaidrashid-git/ecommerce-api/controllers/qr"
 	userControllers "github.com/junaidrashid-git/ecommerce-api/controllers/user"
 	"github.com/junaidrashid-git/ecommerce-api/middleware"
 	"gorm.io/gorm"
@@ -18,7 +19,7 @@ func SetupAdminRoutes(r *gin.Engine, db *gorm.DB) {
 		// ─────────── Admin & User Management ───────────
 		adminGroup.GET("/admins", adminController.GetAllAdmins(db))
 		adminGroup.GET("/users", userControllers.GetAllUsers(db))
-
+		adminGroup.POST("/qrupload", qrcontroller.HandleQRFileUpload())
 		// ─────────── Product Management ───────────
 		productAdmin := adminGroup.Group("/products")
 		{
