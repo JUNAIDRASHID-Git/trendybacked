@@ -58,8 +58,8 @@ func main() {
 	}))
 
 	// Directories
-	uploadsDir := "/var/www/trendybackend/uploads"
-	backupDir := "/var/www/trendybackend/backup/uploads"
+	uploadsDir := "/var/www/trendybacked/uploads"
+	backupDir := "/var/www/trendybacked/backup/uploads"
 
 	// Serve uploaded images
 	r.Static("/uploads", uploadsDir)
