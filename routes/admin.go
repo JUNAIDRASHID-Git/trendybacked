@@ -25,6 +25,8 @@ func SetupAdminRoutes(r *gin.Engine, db *gorm.DB) {
 		adminGroup.GET("/users", userControllers.GetAllUsers(db))
 		adminGroup.POST("/qrupload", qrcontroller.HandleQRFileUpload(db, uploadDir, publicBaseURL))
 		adminGroup.GET("/qr", qrcontroller.GetAllQRFilesHandler(db))
+		adminGroup.DELETE("/qr/:id", qrcontroller.DeleteQRFileHandler(db, uploadDir))
+
 		// ─────────── Product Management ───────────
 		productAdmin := adminGroup.Group("/products")
 		{
