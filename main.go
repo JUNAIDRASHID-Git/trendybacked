@@ -37,6 +37,7 @@ func main() {
 		&models.Order{},
 		&models.OrderItem{},
 		&models.Banner{},
+		&models.QRFile{},
 	); err != nil {
 		log.Fatalf("❌ AutoMigrate failed: %v", err)
 	}

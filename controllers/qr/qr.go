@@ -10,11 +10,13 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
+
+	"github.com/junaidrashid-git/ecommerce-api/models"
 )
 
-// HandleQRFileUpload handles file uploads and returns the public URL.
-// Production-ready: supports local and prod paths, safe filenames, and logging.
-func HandleQRFileUpload(uploadDir string, publicBaseURL string) gin.HandlerFunc {
+// HandleQRFileUpload handles file uploads and saves info to DB
+func HandleQRFileUpload(db *gorm.DB, uploadDir string, publicBaseURL string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Parse uploaded file
 		file, err := c.FormFile("file")
@@ -23,7 +25,7 @@ func HandleQRFileUpload(uploadDir string, publicBaseURL string) gin.HandlerFunc 
 			return
 		}
 
-		// Sanitize filename: remove any special chars
+		// Sanitize filename
 		re := regexp.MustCompile(`[^\w\d\-_\.]`)
 		cleanName := re.ReplaceAllString(file.Filename, "_")
 		filename := fmt.Sprintf("%d_%s", time.Now().Unix(), cleanName)
@@ -36,7 +38,7 @@ func HandleQRFileUpload(uploadDir string, publicBaseURL string) gin.HandlerFunc 
 			return
 		}
 
-		// Save file
+		// Save file to disk
 		savePath := filepath.Join(uploadDir, filename)
 		if err := c.SaveUploadedFile(file, savePath); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
@@ -48,13 +50,33 @@ func HandleQRFileUpload(uploadDir string, publicBaseURL string) gin.HandlerFunc 
 		// Construct public URL
 		fileURL := fmt.Sprintf("%s/qrfiles/%s", publicBaseURL, filename)
 
-		// Log upload for monitoring
-		log.Printf("QR file uploaded: %s -> %s", file.Filename, fileURL)
+		// Save record in database
+		qrFile, err := models.SaveQRFile(db, filename, fileURL)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": fmt.Sprintf("Failed to save file record: %v", err),
+			})
+			return
+		}
 
-		// Respond
+		// Log and respond
+		log.Printf("✅ QR file uploaded & saved: %s -> %s", filename, fileURL)
+
 		c.JSON(http.StatusOK, gin.H{
-			"file_url": fileURL,
-			"message":  "File uploaded successfully",
+			"message":  "File uploaded and saved successfully",
+			"id":       qrFile.ID,
+			"file_url": qrFile.FileURL,
 		})
+	}
+}
+
+func GetAllQRFilesHandler(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		files, err := models.GetAllQRFiles(db)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch QR files"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"data": files})
 	}
 }
