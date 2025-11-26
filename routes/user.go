@@ -9,8 +9,30 @@ import (
 	"gorm.io/gorm"
 )
 
-// SetupUserRoutes registers all “/user/*” endpoints. Requires JWT middleware.
+// SetupUserRoutes registers all “/user/*” endpoints.
+// User & Cart require JWT; Products & Categories are PUBLIC.
 func SetupUserRoutes(r *gin.Engine, db *gorm.DB) {
+
+	guestGroup := r.Group("/guest")
+	{
+		guestGroup.GET("/cart", cartControllers.GetGuestCart(db)) // GET /guest/cart?guest_id=xxx
+		guestGroup.POST("/cart", cartControllers.UpdateGuestCartItem(db))
+		guestGroup.DELETE("/cart/:product_id", cartControllers.DeleteGuestCartItem(db))
+		guestGroup.DELETE("/cart", cartControllers.ClearGuestCart(db)) // DELETE /guest/cart
+	}
+
+	// ──────────────── PUBLIC ROUTES ────────────────
+	publicGroup := r.Group("/public")
+	{
+		// Publicly accessible product routes
+		publicGroup.GET("/products", productControllers.GetProducts(db))        // GET /public/products
+		publicGroup.GET("/products/:id", productControllers.GetProductByID(db)) // GET /public/products/:id
+
+		// Publicly accessible category routes
+		publicGroup.GET("/categories", userControllers.GetAllCategoriesWithProducts(db)) // GET /public/categories
+	}
+
+	// ──────────────── AUTHENTICATED USER ROUTES ────────────────
 	userGroup := r.Group("/user")
 	userGroup.Use(middleware.ValidateToken)
 	{
@@ -26,12 +48,5 @@ func SetupUserRoutes(r *gin.Engine, db *gorm.DB) {
 			cartGroup.DELETE("/:product_id", cartControllers.DeleteCartItem(db)) // DELETE /user/cart/:product_id
 			cartGroup.DELETE("/", cartControllers.ClearUserCart(db))             // DELETE /user/cart
 		}
-
-		// ──────────────── Browse Products ────────────────
-		userGroup.GET("/products", productControllers.GetProducts(db))        // GET /user/products
-		userGroup.GET("/products/:id", productControllers.GetProductByID(db)) // GET /user/products
-
-		// ──────────────── Browse Categories + Products ────────────────
-		userGroup.GET("/categories", userControllers.GetAllCategoriesWithProducts(db)) // GET /user/categories
 	}
 }

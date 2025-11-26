@@ -29,9 +29,12 @@ func main() {
 	// Auto-migrate all tables
 	if err := db.AutoMigrate(
 		&models.User{},
+		&models.GuestUser{},
 		&models.Product{},
 		&models.Category{},
 		&models.Admin{},
+		&models.GuestCart{},
+		&models.GuestCartItem{},
 		&models.Cart{},
 		&models.CartItem{},
 		&models.Order{},
@@ -41,6 +44,8 @@ func main() {
 	); err != nil {
 		log.Fatalf("❌ AutoMigrate failed: %v", err)
 	}
+
+	StartGuestCleanup(db)
 
 	// Gin setup
 	r := gin.Default()
@@ -208,4 +213,13 @@ func cleanupOldBackups(backupDir string, retention time.Duration) {
 			}
 		}
 	}
+}
+
+func StartGuestCleanup(db *gorm.DB) {
+	ticker := time.NewTicker(1 * time.Hour)
+	go func() {
+		for range ticker.C {
+			db.Where("expires_at < ?", time.Now()).Delete(&models.GuestUser{})
+		}
+	}()
 }

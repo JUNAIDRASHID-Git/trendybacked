@@ -4,11 +4,10 @@ import (
 	"errors"
 	"net/http"
 	"os"
+
 	"github.com/dgrijalva/jwt-go"
 	"github.com/gin-gonic/gin"
 )
-
-
 
 func ValidateToken(c *gin.Context) {
 	// Get the token from the header
