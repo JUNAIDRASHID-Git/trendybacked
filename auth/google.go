@@ -3,50 +3,24 @@ package auth
 import (
 	"context"
 	"encoding/json"
-	"log"
 	"net/http"
 	"os"
+	"time"
 
-	firebase "firebase.google.com/go"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/junaidrashid-git/ecommerce-api/models"
-	"google.golang.org/api/option"
 	"gorm.io/gorm"
 )
 
-// InitFirebase initializes Firebase app and auth client
-func InitFirebase() {
-	ctx := context.Background()
-
-	credsJSON := os.Getenv("FIREBASE_CREDENTIALS_JSON")
-	if credsJSON == "" {
-		log.Fatal("FIREBASE_CREDENTIALS_JSON must be set")
-	}
-
-	projectID = os.Getenv("FIREBASE_PROJECT_ID")
-	if projectID == "" {
-		log.Fatal("FIREBASE_PROJECT_ID must be set")
-	}
-
-	opt := option.WithCredentialsJSON([]byte(credsJSON))
-	config := &firebase.Config{ProjectID: projectID}
-
-	var err error
-	firebaseApp, err = firebase.NewApp(ctx, config, opt)
-	if err != nil {
-		log.Fatalf("Error initializing Firebase app: %v", err)
-	}
-
-	firebaseAuth, err = firebaseApp.Auth(ctx)
-	if err != nil {
-		log.Fatalf("Error getting Firebase Auth client: %v", err)
-	}
-}
-
-// GoogleUserLoginHandler handles login/signup via Google OAuth ID token
+// ---------------------------------------------
+// GOOGLE USER LOGIN
+// ---------------------------------------------
 func GoogleUserLoginHandler(w http.ResponseWriter, r *http.Request, db *gorm.DB) {
 	var req struct {
 		IDToken string `json:"idToken"`
+		GuestID string `json:"guest_id"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.IDToken == "" {
 		http.Error(w, "Invalid request payload", http.StatusBadRequest)
 		return
@@ -54,32 +28,32 @@ func GoogleUserLoginHandler(w http.ResponseWriter, r *http.Request, db *gorm.DB)
 
 	ctx := context.Background()
 
+	// Verify Firebase token
 	token, err := firebaseAuth.VerifyIDTokenAndCheckRevoked(ctx, req.IDToken)
 	if err != nil {
-		log.Printf("ID token verification failed: %v", err)
-		http.Error(w, "Invalid or revoked ID token", http.StatusUnauthorized)
+		http.Error(w, "Invalid Firebase ID token", http.StatusUnauthorized)
 		return
 	}
 
 	if token.Audience != projectID {
-		log.Printf("Token audience mismatch: got %q", token.Audience)
 		http.Error(w, "Invalid token audience", http.StatusUnauthorized)
 		return
 	}
 
-	email, ok := token.Claims["email"].(string)
-	if !ok || email == "" {
-		http.Error(w, "Email not found in token", http.StatusUnauthorized)
-		return
-	}
+	// Extract user info
+	email := token.Claims["email"].(string)
 	name, _ := token.Claims["name"].(string)
 	picture, _ := token.Claims["picture"].(string)
-
 	firebaseUserID := token.UID
 
+	// ---------------------------------------------
+	// 1️⃣ Fetch or Create user
+	// ---------------------------------------------
 	var user models.User
-	err = db.First(&user, "id = ?", firebaseUserID).Error
+	err = db.Preload("Cart.Items").Where("id = ?", firebaseUserID).First(&user).Error
+
 	if err == gorm.ErrRecordNotFound {
+		// User does not exist → Create
 		user = models.User{
 			ID:       firebaseUserID,
 			Email:    email,
@@ -89,53 +63,185 @@ func GoogleUserLoginHandler(w http.ResponseWriter, r *http.Request, db *gorm.DB)
 			Cart:     models.Cart{UserID: firebaseUserID},
 		}
 
-		// ✅ FIX: removed .Omit("ID")
 		if err := db.Create(&user).Error; err != nil {
-			log.Printf("❌ Failed to register user: %v", err)
-			http.Error(w, "Failed to register user", http.StatusInternalServerError)
+			http.Error(w, "Failed to create user", http.StatusInternalServerError)
 			return
 		}
-		log.Printf("✅ New user registered: %s", email)
-	} else if err != nil {
-		http.Error(w, "Database error", http.StatusInternalServerError)
-		return
-	} else {
-		// Update user info if user already exists
-		updates := models.User{
+
+	} else if err == nil {
+		// User already exists → Update profile
+		db.Model(&user).Updates(models.User{
 			Name:    name,
 			Picture: picture,
-		}
-		if err := db.Model(&user).Updates(updates).Error; err != nil {
-			http.Error(w, "Failed to update user info", http.StatusInternalServerError)
-			return
-		}
-		log.Printf("✅ Existing user updated: %s", email)
+		})
+	} else {
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
 	}
 
-	// Issue a JWT token and respond
-	issueTokenAndRespond(w, email, "user", firebaseUserID, name, picture)
+	// ---------------------------------------------
+	// 2️⃣ Merge Guest Cart → User Cart
+	// ---------------------------------------------
+	var mergeStatus string = "no-guest-cart"
+
+	if req.GuestID != "" {
+		merged, err := mergeGuestCartIntoUserCart(db, req.GuestID, user.ID)
+		if err != nil {
+			mergeStatus = "merge-failed"
+		} else if merged {
+			mergeStatus = "merged-success"
+		} else {
+			mergeStatus = "guest-cart-empty"
+		}
+	}
+
+	// ---------------------------------------------
+	// 3️⃣ Create auth response
+	// ---------------------------------------------
+	resp := map[string]interface{}{
+		"message":         "Login successful",
+		"merge_status":    mergeStatus,
+		"user":            user,
+		"firebase_id":     firebaseUserID,
+		"profile_updated": true,
+		"token":           issueJWT(email, "user", firebaseUserID, name, picture),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }
 
-// func GoogleUserLogoutHandler(w http.ResponseWriter, r *http.Request, db *gorm.DB) {
-// 	var req struct {
-// 		UserID string `json:"userId"`
-// 	}
+// ---------------------------------------------
+// MERGE GUEST CART INTO USER CART
+// RETURNS: (bool merged, error)
+// ---------------------------------------------
+func mergeGuestCartIntoUserCart(db *gorm.DB, guestID, userID string) (bool, error) {
+	tx := db.Begin()
+	if tx.Error != nil {
+		return false, tx.Error
+	}
 
-// 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.UserID == "" {
-// 		http.Error(w, "Invalid request", http.StatusBadRequest)
-// 		return
-// 	}
+	// --------------------
+	// Load guest cart
+	// --------------------
+	var guestCart models.GuestCart
+	if err := tx.Preload("Items").
+		Where("guest_id = ?", guestID).
+		First(&guestCart).Error; err != nil {
 
-// 	ctx := context.Background()
+		tx.Rollback()
+		return false, nil // nothing to merge
+	}
 
-// 	err := firebaseAuth.RevokeRefreshTokens(ctx, req.UserID)
-// 	if err != nil {
-// 		log.Printf("❌ Failed to revoke tokens: %v", err)
-// 		http.Error(w, "Failed to revoke user tokens", http.StatusInternalServerError)
-// 		return
-// 	}
+	// --------------------
+	// Load or create user cart
+	// --------------------
+	var userCart models.Cart
+	err := tx.Preload("Items").
+		Where("user_id = ?", userID).
+		First(&userCart).Error
 
-// 	log.Printf("✅ Refresh tokens revoked for user: %s", req.UserID)
-// 	w.WriteHeader(http.StatusOK)
-// 	json.NewEncoder(w).Encode(map[string]string{"message": "User logged out"})
-// }
+	if err == gorm.ErrRecordNotFound {
+		userCart = models.Cart{UserID: userID}
+		if err := tx.Create(&userCart).Error; err != nil {
+			tx.Rollback()
+			return false, err
+		}
+
+		tx.Preload("Items").Where("user_id = ?", userID).First(&userCart)
+	} else if err != nil {
+		tx.Rollback()
+		return false, err
+	}
+
+	// --------------------
+	// Merge items
+	// --------------------
+	for _, guestItem := range guestCart.Items {
+		var userItem models.CartItem
+
+		lookupErr := tx.Where(
+			"cart_id = ? AND product_id = ?",
+			userCart.CartID,
+			guestItem.ProductID,
+		).First(&userItem).Error
+
+		if lookupErr == nil {
+			// Update quantity
+			userItem.Quantity += guestItem.Quantity
+			userItem.AddedAt = time.Now()
+
+			if err := tx.Save(&userItem).Error; err != nil {
+				tx.Rollback()
+				return false, err
+			}
+
+		} else if lookupErr == gorm.ErrRecordNotFound {
+			// Insert new item
+			newItem := models.CartItem{
+				CartID:              userCart.CartID,
+				ProductID:           guestItem.ProductID,
+				ProductEName:        guestItem.ProductEName,
+				ProductArName:       guestItem.ProductArName,
+				ProductImage:        guestItem.ProductImage,
+				ProductStock:        guestItem.ProductStock,
+				ProductSalePrice:    guestItem.ProductSalePrice,
+				ProductRegularPrice: guestItem.ProductRegularPrice,
+				Weight:              guestItem.Weight,
+				Quantity:            guestItem.Quantity,
+				AddedAt:             time.Now(),
+			}
+
+			if err := tx.Create(&newItem).Error; err != nil {
+				tx.Rollback()
+				return false, err
+			}
+
+		} else {
+			tx.Rollback()
+			return false, lookupErr
+		}
+	}
+
+	// --------------------
+	// Delete guest cart
+	// --------------------
+	if err := tx.Where("cart_id = ?", guestCart.CartID).Delete(&models.GuestCartItem{}).Error; err != nil {
+		tx.Rollback()
+		return false, err
+	}
+
+	if err := tx.Delete(&guestCart).Error; err != nil {
+		tx.Rollback()
+		return false, err
+	}
+
+	// Commit
+	if err := tx.Commit().Error; err != nil {
+		tx.Rollback()
+		return false, err
+	}
+
+	return true, nil
+}
+
+// issueJWT generates a JWT token for a user
+func issueJWT(email, role, userID, name, picture string) string {
+	claims := jwt.MapClaims{
+		"user_id": userID,
+		"email":   email,
+		"role":    role,
+		"name":    name,
+		"picture": picture,
+		"exp":     time.Now().Add(24 * time.Hour).Unix(),
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	signedToken, err := token.SignedString([]byte(os.Getenv("JWT_SECRET")))
+	if err != nil {
+		// In production, you may want to handle this differently
+		return ""
+	}
+
+	return signedToken
+}
