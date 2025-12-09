@@ -91,18 +91,3 @@ func UpdateUser(db *gorm.DB) gin.HandlerFunc {
 		c.JSON(http.StatusOK, user)
 	}
 }
-
-// GetAllCategoriesWithProducts returns all categories with their products
-func GetAllCategoriesWithProducts(db *gorm.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		var categories []models.Category
-
-		// Preload Products
-		if err := db.Preload("Products").Find(&categories).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch categories with products"})
-			return
-		}
-
-		c.JSON(http.StatusOK, categories)
-	}
-}

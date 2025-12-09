@@ -1,8 +1,12 @@
 package productcontroller
 
 import (
+	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/junaidrashid-git/ecommerce-api/models"
@@ -12,31 +16,72 @@ import (
 // CreateCategory creates a new category.
 func CreateCategory(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		var input struct {
-			EName  string `json:"ename" binding:"required"`
-			ARName string `json:"arname" binding:"required"`
-		}
-		if err := c.ShouldBindJSON(&input); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "English and Arabic names are required"})
+		ename := c.PostForm("ename")
+		arname := c.PostForm("arname")
+
+		if ename == "" || arname == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "ename and arname are required"})
 			return
 		}
 
-		newCategory := models.Category{
-			EName:    input.EName,
-			ARName:   input.ARName,
-			Products: []models.Product{},
-		}
+		// Optional image upload
+		var imageURL string
+		file, err := c.FormFile("image")
+		if err == nil { // Image is optional
+			uploadDir := "/var/www/trendybacked/uploads/categories"
+			os.MkdirAll(uploadDir, os.ModePerm)
 
-		if err := db.Create(&newCategory).Error; err != nil {
-			if strings.Contains(err.Error(), "unique") {
-				c.JSON(http.StatusConflict, gin.H{"error": "Category already exists"})
-			} else {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create category"})
+			filename := strings.ReplaceAll(file.Filename, " ", "_")
+			savePath := filepath.Join(uploadDir, filename)
+
+			if err := c.SaveUploadedFile(file, savePath); err != nil {
+				c.JSON(500, gin.H{"error": "Failed to save image"})
+				return
 			}
+
+			imageURL = "/uploads/categories/" + filename
+		}
+
+		category := models.Category{
+			EName:  ename,
+			ARName: arname,
+			Image:  imageURL,
+		}
+
+		if err := db.Create(&category).Error; err != nil {
+			c.JSON(500, gin.H{"error": "Failed to create category"})
 			return
 		}
 
-		c.JSON(http.StatusCreated, newCategory)
+		c.JSON(201, category)
+	}
+}
+
+func GetAllCategoriesWithProducts(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var categories []models.Category
+
+		// Preload Products
+		if err := db.Preload("Products").Find(&categories).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch categories with products"})
+			return
+		}
+
+		c.JSON(http.StatusOK, categories)
+	}
+}
+
+func GetCategoryByID(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		id := c.Param("id")
+
+		var category models.Category
+		if err := db.Preload("Products").First(&category, id).Error; err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Category not found"})
+			return
+		}
+
+		c.JSON(http.StatusOK, category)
 	}
 }
 
@@ -60,40 +105,46 @@ func GetAllCategories(db *gorm.DB) gin.HandlerFunc {
 func UpdateCategory(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.Param("id")
-		if id == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Category ID is required"})
+
+		var category models.Category
+		if err := db.First(&category, id).Error; err != nil {
+			c.JSON(404, gin.H{"error": "Category not found"})
 			return
 		}
 
-		var input struct {
-			EName  string `json:"ename" binding:"required"`
-			ARName string `json:"arname" binding:"required"`
+		// Update names if provided
+		if v := c.PostForm("ename"); v != "" {
+			category.EName = v
 		}
-		if err := c.ShouldBindJSON(&input); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Both English and Arabic names are required"})
+		if v := c.PostForm("arname"); v != "" {
+			category.ARName = v
+		}
+
+		// Optional image upload
+		file, err := c.FormFile("image")
+		if err == nil {
+			uploadDir := "/var/www/trendybacked/uploads/categories"
+			os.MkdirAll(uploadDir, os.ModePerm)
+
+			filename := fmt.Sprintf("%d_%s", time.Now().UnixNano(),
+				strings.ReplaceAll(file.Filename, " ", "_"))
+
+			savePath := filepath.Join(uploadDir, filename)
+
+			if err := c.SaveUploadedFile(file, savePath); err != nil {
+				c.JSON(500, gin.H{"error": "Failed to save image"})
+				return
+			}
+
+			category.Image = "/uploads/categories/" + filename
+		}
+
+		if err := db.Save(&category).Error; err != nil {
+			c.JSON(500, gin.H{"error": "Failed to update category"})
 			return
 		}
 
-		result := db.Model(&models.Category{}).
-			Where("id = ?", id).
-			Updates(models.Category{EName: input.EName, ARName: input.ARName})
-
-		if result.Error != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update category"})
-			return
-		}
-		if result.RowsAffected == 0 {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Category not found"})
-			return
-		}
-
-		var updated models.Category
-		if err := db.First(&updated, id).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch updated category"})
-			return
-		}
-
-		c.JSON(http.StatusOK, updated)
+		c.JSON(200, category)
 	}
 }
 

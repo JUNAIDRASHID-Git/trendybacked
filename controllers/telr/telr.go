@@ -39,7 +39,7 @@ func getTelrConfig() (storeID int, authKey, apiURL string, testMode int, err err
 	}
 
 	if storeID == 0 || authKey == "" || apiURL == "" {
-		return 0, "", "", 0, fmt.Errorf("Telr configuration missing")
+		return 0, "", "", 0, fmt.Errorf("telr configuration missing")
 	}
 	return storeID, authKey, apiURL, testMode, nil
 }
@@ -98,7 +98,7 @@ func CreateTelrPayment(cartID, amount, currency, description, name, email, phone
 
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		return "", "", fmt.Errorf("Telr API error (%d): %s", resp.StatusCode, string(body))
+		return "", "", fmt.Errorf("telr API error (%d): %s", resp.StatusCode, string(body))
 	}
 
 	var telrResp TelrPaymentResponse
@@ -107,11 +107,11 @@ func CreateTelrPayment(cartID, amount, currency, description, name, email, phone
 	}
 
 	if telrResp.Error != nil {
-		return "", "", fmt.Errorf("Telr error: %s", telrResp.Error.Message)
+		return "", "", fmt.Errorf("telr error: %s", telrResp.Error.Message)
 	}
 
 	if telrResp.Order.URL == "" {
-		return "", "", fmt.Errorf("Telr returned empty payment URL")
+		return "", "", fmt.Errorf("telr returned empty payment URL")
 	}
 
 	return telrResp.Order.URL, telrResp.Order.Ref, nil
