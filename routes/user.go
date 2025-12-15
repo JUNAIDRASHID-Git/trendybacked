@@ -4,7 +4,6 @@ import (
 	"github.com/gin-gonic/gin"
 	cartControllers "github.com/junaidrashid-git/ecommerce-api/controllers/cart"
 	productControllers "github.com/junaidrashid-git/ecommerce-api/controllers/product"
-	productcontroller "github.com/junaidrashid-git/ecommerce-api/controllers/product"
 	userControllers "github.com/junaidrashid-git/ecommerce-api/controllers/user"
 	"github.com/junaidrashid-git/ecommerce-api/middleware"
 	"gorm.io/gorm"
@@ -30,8 +29,8 @@ func SetupUserRoutes(r *gin.Engine, db *gorm.DB) {
 		publicGroup.GET("/products/:id", productControllers.GetProductByID(db))         // GET /public/products/:id
 		publicGroup.GET("/og/products/:id", productControllers.GetProductOGHandler(db)) // GET /og/public/products/:id
 		// Publicly accessible category routes
-		publicGroup.GET("/categories", productcontroller.GetAllCategoriesWithProducts(db))
-		publicGroup.GET("/categories/:id", productcontroller.GetCategoryByID(db))
+		publicGroup.GET("/categories", productControllers.GetAllCategoriesWithProducts(db))
+		publicGroup.GET("/categories/:id", productControllers.GetCategoryByID(db))
 	}
 
 	// ──────────────── AUTHENTICATED USER ROUTES ────────────────

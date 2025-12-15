@@ -13,7 +13,9 @@ import (
 	"gorm.io/gorm"
 )
 
-// CreateCategory creates a new category.
+const categoryUploadDir = "/var/www/trendybacked/uploads/categories"
+const categoryPublicPath = "/uploads/categories"
+
 func CreateCategory(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ename := c.PostForm("ename")
@@ -24,22 +26,28 @@ func CreateCategory(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		// Optional image upload
 		var imageURL string
-		file, err := c.FormFile("image")
-		if err == nil { // Image is optional
-			uploadDir := "/var/www/trendybacked/uploads/categories"
-			os.MkdirAll(uploadDir, os.ModePerm)
 
-			filename := strings.ReplaceAll(file.Filename, " ", "_")
-			savePath := filepath.Join(uploadDir, filename)
+		file, err := c.FormFile("image")
+		if err == nil {
+			if err := os.MkdirAll(categoryUploadDir, os.ModePerm); err != nil {
+				c.JSON(500, gin.H{"error": "Failed to create upload folder"})
+				return
+			}
+
+			ext := filepath.Ext(file.Filename)
+			base := strings.TrimSuffix(filepath.Base(file.Filename), ext)
+			base = strings.ReplaceAll(base, " ", "_")
+
+			filename := fmt.Sprintf("%d_%s%s", time.Now().UnixNano(), base, ext)
+			savePath := filepath.Join(categoryUploadDir, filename)
 
 			if err := c.SaveUploadedFile(file, savePath); err != nil {
 				c.JSON(500, gin.H{"error": "Failed to save image"})
 				return
 			}
 
-			imageURL = "/uploads/categories/" + filename
+			imageURL = fmt.Sprintf("%s/%s", categoryPublicPath, filename)
 		}
 
 		category := models.Category{
@@ -101,7 +109,6 @@ func GetAllCategories(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
-// UpdateCategory updates an existing category.
 func UpdateCategory(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.Param("id")
@@ -112,7 +119,6 @@ func UpdateCategory(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		// Update names if provided
 		if v := c.PostForm("ename"); v != "" {
 			category.EName = v
 		}
@@ -120,23 +126,35 @@ func UpdateCategory(db *gorm.DB) gin.HandlerFunc {
 			category.ARName = v
 		}
 
-		// Optional image upload
 		file, err := c.FormFile("image")
 		if err == nil {
-			uploadDir := "/var/www/trendybacked/uploads/categories"
-			os.MkdirAll(uploadDir, os.ModePerm)
+			if err := os.MkdirAll(categoryUploadDir, os.ModePerm); err != nil {
+				c.JSON(500, gin.H{"error": "Failed to create upload folder"})
+				return
+			}
 
-			filename := fmt.Sprintf("%d_%s", time.Now().UnixNano(),
-				strings.ReplaceAll(file.Filename, " ", "_"))
+			// 🔥 Delete old image if exists
+			if category.Image != "" {
+				oldPath := filepath.Join(
+					categoryUploadDir,
+					filepath.Base(category.Image),
+				)
+				_ = os.Remove(oldPath)
+			}
 
-			savePath := filepath.Join(uploadDir, filename)
+			ext := filepath.Ext(file.Filename)
+			base := strings.TrimSuffix(filepath.Base(file.Filename), ext)
+			base = strings.ReplaceAll(base, " ", "_")
+
+			filename := fmt.Sprintf("%d_%s%s", time.Now().UnixNano(), base, ext)
+			savePath := filepath.Join(categoryUploadDir, filename)
 
 			if err := c.SaveUploadedFile(file, savePath); err != nil {
 				c.JSON(500, gin.H{"error": "Failed to save image"})
 				return
 			}
 
-			category.Image = "/uploads/categories/" + filename
+			category.Image = fmt.Sprintf("%s/%s", categoryPublicPath, filename)
 		}
 
 		if err := db.Save(&category).Error; err != nil {
@@ -148,14 +166,9 @@ func UpdateCategory(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
-// DeleteCategory deletes a category and clears product associations.
 func DeleteCategory(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.Param("id")
-		if id == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Category ID is required"})
-			return
-		}
 
 		var cat models.Category
 		if err := db.Preload("Products").First(&cat, id).Error; err != nil {
@@ -165,29 +178,34 @@ func DeleteCategory(db *gorm.DB) gin.HandlerFunc {
 
 		tx := db.Begin()
 		if tx.Error != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to start transaction"})
+			c.JSON(500, gin.H{"error": "Failed to start transaction"})
 			return
 		}
-		defer func() {
-			if r := recover(); r != nil {
-				tx.Rollback()
-			}
-		}()
 
+		// Clear product associations
 		if err := tx.Model(&cat).Association("Products").Clear(); err != nil {
 			tx.Rollback()
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to clear product associations"})
+			c.JSON(500, gin.H{"error": "Failed to clear product associations"})
 			return
+		}
+
+		// 🔥 Delete image file
+		if cat.Image != "" {
+			imagePath := filepath.Join(
+				categoryUploadDir,
+				filepath.Base(cat.Image),
+			)
+			_ = os.Remove(imagePath)
 		}
 
 		if err := tx.Delete(&cat).Error; err != nil {
 			tx.Rollback()
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete category"})
+			c.JSON(500, gin.H{"error": "Failed to delete category"})
 			return
 		}
 
 		if err := tx.Commit().Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to commit transaction"})
+			c.JSON(500, gin.H{"error": "Failed to commit transaction"})
 			return
 		}
 
